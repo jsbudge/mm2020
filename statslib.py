@@ -59,7 +59,7 @@ def getGames(fnme, both_teams=True, duplicate=False):
 def normalizeToSeason(df):
     for season, sdf in df.groupby(['Season']):
         for col in sdf.columns:
-            if col != 'Season':
-                df.loc[df['Season'] == season, col] = sdf[col].values / sdf[col].mean()
+            if col not in ['Season', 'GLoc', 'DayNum', 'TeamID', '1_TeamID', '2_TeamID', 'NumOT']:
+                df.loc[df['Season'] == season, col] = sdf[col].values / sdf[col].mean() - 1
     return df
         

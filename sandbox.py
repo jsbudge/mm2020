@@ -12,14 +12,14 @@ Stuff here gets added to statslib later.
 
 import numpy as np
 import pandas as pd
-from statslib import getFiles, getGames, normalizeToSeason
+import statslib as st
 import seaborn as sns
 
 
 
-files = getFiles()
+files = st.getFiles()
 
-wdf = getGames(files['MRegularSeasonDetailedResults'], False, True)
+wdf = st.getGames(files['MRegularSeasonDetailedResults'], True, True)
 
-wdf = normalizeToSeason(wdf)
-sns.kdeplot(wdf['Score'])
+wdf = st.normalizeToSeason(wdf)
+sns.kdeplot(wdf['1_Score'])

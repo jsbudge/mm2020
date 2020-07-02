@@ -10,7 +10,7 @@ import os
 
 stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
               'OR', 'DR', 'Ast', 'TO', 'Stl', 'Blk', 'PF']
-id_cols = ['GameID', 'Season', 'GLoc', 'DayNum', '1_TeamID', '2_TeamID']
+id_cols = ['GameID', 'Season', 'DayNum', '1_TeamID', '2_TeamID']
 
 def getFiles(fdir='data'):
     data = {}
@@ -31,6 +31,7 @@ def getGames(fnme, both_teams=True, duplicate=False):
     'NumOT', 'LFGM', 'LFGA', 'LFGM3', 'LFGA3', 'LFTM', 'LFTA', 'LOR', 'LDR', 'LAst',
     'LTO', 'LStl', 'LBlk', 'LPF']].rename(columns={'WLoc': 'GLoc'})
     ldf['GLoc'] = -ldf['GLoc']
+    
     if not both_teams:
         for col in wdf.columns:
             if col[0] == 'W':
@@ -57,9 +58,24 @@ def getGames(fnme, both_teams=True, duplicate=False):
                 wdf_1 = wdf_1.rename(columns={col: '2_' + col[1:]})
                 wdf_2 = wdf_2.rename(columns={col: '1_' + col[1:]})
         if duplicate:
-            return wdf_1.merge(ldf_1).append(wdf_2.merge(ldf_2), ignore_index=True)
+            ret = wdf_1.merge(ldf_1, on='GameID').append(wdf_2.merge(ldf_2, on='GameID'), ignore_index=True)
+            for col in ret.columns:
+                if col[:-2] == '_x':
+                    ret = ret.rename(columns={col: col[:-2]})
+                elif col[:-2] == '_y':
+                    ret = ret.drop(columns=[col])
+            return ret
         else:
-            return wdf_1.merge(ldf_1), wdf_2.merge(ldf_2)
+            w = wdf_1.merge(ldf_1, on=id_cols)
+            l = wdf_2.merge(ldf_2, on=id_cols)
+            for col in w.columns:
+                if col[-2:] == '_x':
+                    w = w.rename(columns={col: col[:-2]})
+                    l = l.rename(columns={col: col[:-2]})
+                elif col[-2:] == '_y':
+                    w = w.drop(columns=[col])
+                    l = l.drop(columns=[col])
+            return w, l
          
 def normalizeToSeason(df):
     for season, sdf in df.groupby(['Season']):
@@ -83,4 +99,32 @@ def getRatios(df):
     for ids in id_cols:
         ret[ids] = df[ids]
     return ret
+
+def addStats(df):
+    df['FG%'] = df['FGM'] / df['FGA']
+    df['PPS'] = (df['Score'] - df['FTM']) / df['FGA']
+    df['eFG%'] = (df['FGM'] + .5 * df['FGM3']) / df['FGA']
+    df['TS%'] = df['Score'] / (2 * (df['FGA'] + .44 * df['FTA']))
+    df['Econ'] = df['Ast'] + df['Stl'] - df['TO']
+    df['Poss'] = .96 * (df['FGA'] - df['OR'] + df['TO'] + .44 * df['FTA'])
+    df['OffRat'] = df['Score'] * 100 / df['Poss']
+    return df
+
+def getSeasonMeans(df):
+    return df.groupby(['Season', 'TeamID']).mean().drop(columns=['GameID', 'GLoc', 'DayNum'])
+
+def getSeasonVars(df):
+    return df.groupby(['Season', 'TeamID']).std().drop(columns=['GameID', 'GLoc', 'DayNum'])
+
+def loadTeamNames(file_dict):
+    df = pd.read_csv(file_dict['MTeams'])
+    ret = {}
+    for idx, row in df.iterrows():
+        ret[row['TeamID']] = row['TeamName']
+        ret[row['TeamName']] = row['TeamID']
+    return ret
+
+def addMasseyOrdinals(df, files):
+    mo = pd.read_csv(files['MMasseyOrdinals'])
+    
         

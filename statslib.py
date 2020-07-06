@@ -7,6 +7,10 @@ This is the statistics library that we'll be using.
 import numpy as np
 import pandas as pd
 import os
+from tqdm import tqdm
+from scipy.interpolate import CubicSpline
+from scipy import linalg
+from math import ceil
 
 stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
               'OR', 'DR', 'Ast', 'TO', 'Stl', 'Blk', 'PF']
@@ -126,5 +130,108 @@ def loadTeamNames(file_dict):
 
 def addMasseyOrdinals(df, files):
     mo = pd.read_csv(files['MMasseyOrdinals'])
+    
+def getSystemWeights(files):
+    #This should only need to be run once, since it saves its results out to a CSV
+    wdf = getGames(files['MRegularSeasonDetailedResults'], True, False)[0]
+    wdf_full = getGames(files['MRegularSeasonDetailedResults'], False, True)
+    mo = pd.read_csv(files['MMasseyOrdinals'])
+    weights_dict= {}
+    for season in np.arange(2011, 2020):
+        wdf2019 = wdf_full.loc[wdf_full['Season'] == season]
+        mo2019 = mo.loc[mo['Season'] == season]
+        
+        ranksys = {}; weights_dict[season] = {}
+        
+        '''
+        WEIGHTING SYSTEM FOR MASSEY ORDINALS
+        '''
+        for idx, sys in tqdm(mo2019.groupby(['SystemName'])):
+            ranksys[idx] = {}
+            ranksys[idx]['rankscore'] = 0
+            for tid, team in sys.groupby(['TeamID']):
+                if team.shape[0] < 2:
+                    ranksys[idx][tid] = team['OrdinalRank'].values[0] * np.ones((wdf2019.loc[wdf2019['TeamID'] == tid].shape[0],))
+                else:
+                    fuunc = CubicSpline(team['RankingDayNum'], team['OrdinalRank'], bc_type='clamped')(wdf2019.loc[wdf2019['TeamID'] == tid, 'DayNum'])
+                    fuunc[wdf2019.loc[wdf2019['TeamID'] == tid, 'DayNum'] < team['RankingDayNum'].values[0]] = team['OrdinalRank'].values[0]
+                    ranksys[idx][tid] = fuunc
+                                                                                                                               
+                    
+        
+        wdf_diffs = getDiffs(wdf.loc[wdf['Season'] == season])
+        max_score = wdf_diffs['Score_diff'].max()
+        for idx, row in tqdm(wdf_diffs.iterrows()):
+            for sys in ranksys:
+                try:
+                    ranksys[sys]['rankscore'] -= \
+                        (ranksys[sys][row['1_TeamID']][wdf2019.loc[wdf2019['TeamID'] == row['1_TeamID'], 'DayNum'] == row['DayNum']][0] \
+                         - ranksys[sys][row['2_TeamID']][wdf2019.loc[wdf2019['TeamID'] == row['2_TeamID'], 'DayNum'] == row['DayNum']][0]) / wdf_diffs.shape[0] * row['Score_diff'] / max_score
+                except:
+                    ranksys[sys]['rankscore'] -= 0
+                    
+        
+        for key in ranksys:
+            weights_dict[season][key] = ranksys[key]['rankscore']
+    
+    sys_weights = pd.DataFrame(index=list(set(mo['SystemName'])), columns=np.arange(2011, 2020))
+    for sys in list(set(mo['SystemName'])):
+        for season in np.arange(2011, 2020):
+            if sys in weights_dict[season]:
+                sys_weights.loc[sys, season] = weights_dict[season][sys]
+    sys_weights += abs(np.nanmin(sys_weights.astype(np.float64).values)) + 1
+    #sys_weights['SystemName'] = sys_weights.index
+    
+    sys_weights.to_csv('sys_weights.csv', index_label='SystemName')
+    return sys_weights
+
+def getRanks(files):
+    wdf = getGames(files['MRegularSeasonDetailedResults'], False, True)
+    wdf = wdf.loc[wdf['Season'] >= 2011].sort_values('DayNum')
+    weights = pd.read_csv('sys_weights.csv')
+    wdf['Rank'] = 999
+    mo = pd.read_csv(files['MMasseyOrdinals'])
+    
+    for idx, grp in tqdm(wdf.groupby(['Season', 'TeamID'])):
+        grp = grp.sort_values('GameID')
+        ranks = mo.loc[np.logical_and(mo['Season'] == idx[0], mo['TeamID'] == idx[1])].merge(weights, on='SystemName').sort_values('RankingDayNum')
+        wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
+                               wdf['TeamID'] == idx[1]), 'Rank'] = lowess(ranks['RankingDayNum'].values, 
+                                       ranks['OrdinalRank'].values, 
+                                       ranks[str(idx[0])].values, x0=grp['DayNum'], f=.15)
+    return wdf
+
+def lowess(x, y, w, x0=None, f=.1, n_iter=3):
+    """lowess_bell_shape_kern(x, y, tau = .005) -> yest
+    Locally weighted regression: fits a nonparametric regression curve to a scatterplot.
+    The arrays x and y contain an equal number of elements; each pair
+    (x[i], y[i]) defines a data point in the scatterplot. The function returns
+    the estimated (smooth) values of y at x0 (optional).
+    """
+    
+    n = len(x)
+    r = int(np.ceil(f * n))
+    yest = np.zeros(n)
+    delta = np.ones(n)
+    
+    #Looping through all x-points
+    for iteration in range(n_iter):
+        for i in range(n):
+            weights = np.zeros((n,))
+            weights[max(0, i-r):min(i+r, n)] = w[max(0, i-r):min(i+r, n)]
+            weights *= delta
+            b = np.array([np.sum(weights * y), np.sum(weights * y * x)])
+            A = np.array([[np.sum(weights), np.sum(weights * x)],
+                        [np.sum(weights * x), np.sum(weights * x * x)]])
+            theta = linalg.solve(A, b)
+            yest[i] = theta[0] + theta[1] * x[i] 
+        residuals = y - yest
+        s = np.median(np.abs(residuals))
+        delta = np.clip(residuals / (6.0 * s), -1, 1)
+        delta = (1 - delta ** 2) ** 2
+    if x0 is None:
+        return yest
+    else:
+        return np.interp(x0, x, yest)
     
         

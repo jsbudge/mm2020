@@ -16,6 +16,12 @@ stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA',
               'OR', 'DR', 'Ast', 'TO', 'Stl', 'Blk', 'PF']
 id_cols = ['GameID', 'Season', 'DayNum', 'T_TeamID', 'O_TeamID']
 
+
+'''
+getFiles
+
+Given a data directory, loads all filenames into a dict.
+'''
 def getFiles(fdir='data'):
     data = {}
     for file in os.listdir(fdir):
@@ -24,6 +30,20 @@ def getFiles(fdir='data'):
             data[dict_name] = os.path.join(fdir, file)
     return data
 
+'''
+getGames
+
+Given a valid CSV file, creates a DataFrame that is suitable for statistical
+analysis.
+Takes each column and changes the names to T_ (for Team) or O_ (for Opponent)
+instead of winner and loser. 
+Maps the WLoc field to integers instead of chars.
+Adds a GameID, since each game's stats gets duplicated to follow the Team/Opponent
+paradigm.
+
+The 'split' parameter allows the user to choose to return either a single DataFrame
+with twice the rows or two DataFrames, containing the Winner and Loser data.
+'''
 def getGames(fnme, split=False):
     df = pd.read_csv(fnme)
     df['WLoc'] = df['WLoc'].map({'A': -1, 'N': 0, 'H': 1})
@@ -68,6 +88,15 @@ def getGames(fnme, split=False):
                 l = l.drop(columns=[col])
         return w, l
          
+'''
+normalizeToSeason
+
+Given a DataFrame following the getGames function return convention above,
+normalizes each statistical column to have zero mean and a standard deviation
+of one.
+
+This modifies the DataFrame in place and returns it.
+'''
 def normalizeToSeason(df):
     for season, sdf in df.groupby(['Season']):
         for col in sdf.columns:
@@ -75,6 +104,12 @@ def normalizeToSeason(df):
                 df.loc[df['Season'] == season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
     return df
 
+'''
+getDiffs
+
+Given a getGames DataFrame, returns a DataFrame with the difference of each
+statistical column.
+'''
 def getDiffs(df):
     ret = pd.DataFrame()
     for st in stat_names:
@@ -83,6 +118,12 @@ def getDiffs(df):
         ret[ids] = df[ids]
     return ret
 
+'''
+getRatios
+
+Given a getGames DataFrame, returns a DataFrame with the ratio of each
+statistical column.
+'''
 def getRatios(df):
     ret = pd.DataFrame()
     for st in stat_names:
@@ -91,6 +132,13 @@ def getRatios(df):
         ret[ids] = df[ids]
     return ret
 
+'''
+addStats
+
+Given a getGames DataFrame, adds various statistics.
+
+Modifies the DataFrame in-place.
+'''
 def addStats(df):
     df['T_FG%'] = df['T_FGM'] / df['T_FGA']
     df['T_PPS'] = (df['T_Score'] - df['T_FTM']) / df['T_FGA']
@@ -129,6 +177,14 @@ def getSeasonMeans(df):
 def getSeasonVars(df):
     return df.groupby(['Season', 'T_TeamID']).std().drop(columns=['GameID', 'GLoc', 'DayNum', 'O_TeamID'])
 
+'''
+getSeasonalStats
+
+Given a getGames DataFrame, calculates a weighted mean on each statistical column
+and adds a few more stats that are valid for seasonal data.
+
+This function requires a DataFrame with the 'T_Rank' and 'O_Rank' fields in it.
+'''
 def getSeasonalStats(df):
     tcols = df.columns.drop(['Season', 'T_TeamID', 'GameID', 'GLoc', 'DayNum', 'O_TeamID'])
     wdf = df.groupby(['Season', 'T_TeamID']).mean().drop(columns=['GameID', 'GLoc', 'DayNum', 'O_TeamID'])

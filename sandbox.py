@@ -30,26 +30,23 @@ of stats across the whole season. Might be good at predicting well-rounded teams
 * Compute Elo ratings for teams, setting initial using the past season tournament
 results with a regression to the mean
 
-* Tweak success rating to be more indicative of how far a team goes in the tourney.
-
 * Find some good defensive stats - relative to the rest of people, anyway.
 
 '''
 
 
 files = st.getFiles()
-#weights = st.getSystemWeights(files)
 ts = st.getGames(files['MRegularSeasonDetailedResults'])
 tt = st.getGames(files['MNCAATourneyDetailedResults'])
-ts = st.getRanks(ts, files)
+ts = st.addRanks(ts)
 ts = st.addStats(ts)
 tt = st.addStats(tt)
-#test = st.normalizeToSeason(test)
+#ts = st.normalizeToSeason(ts)
+#tt = st.normalizeToSeason(tt)
 ts2019 = ts.loc[ts['Season'] == 2019]
 tt2019 = tt.loc[tt['Season'] == 2019]
 
 mns = st.getSeasonalStats(ts2019)
-std = st.getSeasonVars(ts2019)
 
 tt2019['T_Rank'] = 999
 tt2019['O_Rank'] = 999
@@ -62,5 +59,3 @@ for col in tt_test:
     if col[:2] == 'O_':
         tt_test = tt_test.drop(columns=[col])
         mns = mns.drop(columns=[col])
-plt.figure()
-sns.heatmap(tt_test.corr())

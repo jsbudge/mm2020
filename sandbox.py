@@ -41,21 +41,15 @@ tt = st.getGames(files['MNCAATourneyDetailedResults'])
 ts = st.addRanks(ts)
 ts = st.addStats(ts)
 tt = st.addStats(tt)
+ts = st.addElos(ts)
 #ts = st.normalizeToSeason(ts)
 #tt = st.normalizeToSeason(tt)
 ts2019 = ts.loc[ts['Season'] == 2019]
 tt2019 = tt.loc[tt['Season'] == 2019]
 
-mns = st.getSeasonalStats(ts2019)
-
-tt2019['T_Rank'] = 999
-tt2019['O_Rank'] = 999
-for idx, row in tt2019.iterrows():
-    tt2019.loc[idx, 'T_Rank'] = mns.loc[(2019, row['T_TeamID']), 'T_Rank']
-    tt2019.loc[idx, 'O_Rank'] = mns.loc[(2019, row['O_TeamID']), 'T_Rank']
-    
-tt_test = st.getSeasonalStats(tt2019)
-for col in tt_test:
-    if col[:2] == 'O_':
-        tt_test = tt_test.drop(columns=[col])
-        mns = mns.drop(columns=[col])
+for tmid in [1140, 1181, 1101, 1438]:
+    plt.plot(ts2019.loc[ts2019['T_TeamID'] == tmid].corr()['O_Rank'])
+# rmns = st.getSeasonalStats(ts2019, strat='rank')
+# emns = st.getSeasonalStats(ts2019, strat='elo')
+# hmns = st.getSeasonalStats(ts2019, strat='hmean')
+# amns = st.getSeasonalStats(ts2019, strat='mest')

@@ -10,6 +10,8 @@ import os
 from tqdm import tqdm
 from scipy.interpolate import CubicSpline
 from scipy import linalg
+from scipy.stats import hmean
+import statsmodels.api as sm
 
 stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
               'OR', 'DR', 'Ast', 'TO', 'Stl', 'Blk', 'PF']
@@ -199,23 +201,41 @@ and adds a few more stats that are valid for seasonal data.
 
 Params:
     df: DataFrame - getGames frame, with columns added based on the weighting for the mean.
+    strat: enum - This is a string that determines the averaging method we use.
+        'rank': Weight by opponent's ranking
+        'elo': weight by opponent's Elo
+        'hmean': Use harmonic mean
+        'mest': Use M-Estimator with Andrew's Wave as the weighting function
+        
     
 Returns:
     wdf: DataFrame - frame with a single entry per team per season, with the means
                         and added stats for that team.
 '''
-def getSeasonalStats(df):
+def getSeasonalStats(df, strat='rank'):
     tcols = df.columns.drop(['Season', 'T_TeamID', 'GameID', 'GLoc', 'DayNum', 'O_TeamID'])
     wdf = df.groupby(['Season', 'T_TeamID']).mean().drop(columns=['GameID', 'GLoc', 'DayNum', 'O_TeamID'])
     wdf['T_Win%'] = 0
     wdf['T_PythWin%'] = 0
     wdf['T_SoS'] = 0
+    
     for idx, grp in tqdm(df.groupby(['Season', 'T_TeamID'])):
         for col in tcols:
-            wdf.loc[idx, col] = np.average(grp[col], weights=400 - grp['O_Rank'].values)
-        wdf.loc[idx, ['T_Win%', 'T_PythWin%', 'T_SoS']] = [sum(grp['T_Score'] > grp['O_Score']) / grp.shape[0],
+            if strat == 'rank':
+                wdf.loc[idx, col] = np.average(grp[col], weights=400 - grp['O_Rank'].values)
+            elif strat == 'elo':
+                wdf.loc[idx, col] = np.average(grp[col], weights=grp['O_Elo'].values)
+            elif strat == 'hmean':
+                col_min = abs(grp[col].min()) + .1
+                wdf.loc[idx, col] = hmean(grp[col] + col_min) - col_min
+            elif strat == 'mest':
+                awave = sm.robust.norms.AndrewWave(grp[col].std())
+                med = np.median(grp[col])
+                wdf.loc[idx, col] = np.average(grp[col], weights=awave.weights(grp[col] - med))
+        wdf.loc[idx, ['T_Win%', 'T_PythWin%', 'T_SoS', 'T_Elo']] = [sum(grp['T_Score'] > grp['O_Score']) / grp.shape[0],
                                                            sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91),
-                                                           grp['O_Rank'].mean()]
+                                                           np.average(grp['O_Rank'], weights=grp['O_Elo']),
+                                                           grp.loc[grp['DayNum'] == grp['DayNum'].max(), 'T_Elo']]
     return wdf
         
 '''
@@ -372,15 +392,28 @@ def addRanks(df):
     wdf = df.merge(rdf, on=['Season', 'GameID', 'DayNum', 'T_TeamID', 'O_TeamID'])
     return wdf
 
+'''
+calcElos
+Runs through the entire frame and calculates Elo scores for each team, adding
+them to a separate dataframe. Saves the resultsto a CSV for ease of access later.
+
+Params:
+    df: DataFrame - getGames frame.
+    
+Returns:
+    wdf: DataFrame - frame with GameID, T_TeamID, O_TeamID, T_Elo, and O_Elo columns.
+'''
 def calcElo(df):
     tids = list(set(df['T_TeamID'].values))
     elos = dict(zip(list(tids), [1500] * len(tids)))
     K = 20
     wdf = df[['GameID', 'T_TeamID', 'O_TeamID']]
-    wdf['Elo'] = 1500
+    wdf['T_Elo'] = 1500
+    wdf['O_Elo'] = 1500
     
     for idx, day in tqdm(df.groupby(['GameID'])):
         gm = day.iloc[0]
+        #Elo calculation stolen from 538
         elo_diff = elos[gm['T_TeamID']] - elos[gm['O_TeamID']]
         mov = gm['T_Score'] - gm['O_Score']
         elo_shift = 1. / (10. ** (-elo_diff / 400.) + 1.)
@@ -389,14 +422,29 @@ def calcElo(df):
         elos[gm['T_TeamID']] += final_elo_update
         elos[gm['O_TeamID']] -= final_elo_update
         wdf.loc[np.logical_and(wdf['GameID'] == idx,
-                               wdf['T_TeamID'] == gm['T_TeamID']), 'Elo'] = elos[gm['T_TeamID']]
+                               wdf['T_TeamID'] == gm['T_TeamID']), ['T_Elo', 'O_Elo']] = [elos[gm['T_TeamID']],
+                                                                                          elos[gm['O_TeamID']]]
         wdf.loc[np.logical_and(wdf['GameID'] == idx,
-                               wdf['O_TeamID'] == gm['T_TeamID']), 'Elo'] = elos[gm['O_TeamID']]
-        wdf.loc[np.logical_and(wdf['GameID'] == idx,
-                               wdf['T_TeamID'] == gm['O_TeamID']), 'Elo'] = elos[gm['O_TeamID']]
-        wdf.loc[np.logical_and(wdf['GameID'] == idx,
-                               wdf['O_TeamID'] == gm['O_TeamID']), 'Elo'] = elos[gm['T_TeamID']]
+                               wdf['O_TeamID'] == gm['T_TeamID']), ['T_Elo', 'O_Elo']] = [elos[gm['O_TeamID']],
+                                                                                          elos[gm['T_TeamID']]]
+    wdf.to_csv('elo_file.csv', index=False)
     return wdf
+
+'''
+addElos
+Adds T_Elo and O_Elo to frame, using already calculated elo values. Requires
+elo_file.csv in directory. Modifies in-place.
+
+Params:
+    df: DataFrame - getGames frame.
+    
+Returns:
+    df: DataFrame - df with T_Rank and O_Rank columns added.
+'''
+def addElos(df):
+    rdf = pd.read_csv('elo_file.csv')
+    df = df.merge(rdf, on=['GameID', 'T_TeamID', 'O_TeamID'])
+    return df
             
 
 '''

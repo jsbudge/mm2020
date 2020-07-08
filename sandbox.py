@@ -37,6 +37,7 @@ results with a regression to the mean
 
 files = st.getFiles()
 ts = st.getGames(files['MRegularSeasonDetailedResults'])
+
 tt = st.getGames(files['MNCAATourneyDetailedResults'])
 ts = st.addRanks(ts)
 ts = st.addStats(ts)
@@ -46,6 +47,7 @@ ts = st.addElos(ts)
 #tt = st.normalizeToSeason(tt)
 ts2019 = ts.loc[ts['Season'] == 2019]
 tt2019 = tt.loc[tt['Season'] == 2019]
+weights = st.getSystemWeights(ts2019, files)
 
 for tmid in [1140, 1181, 1101, 1438]:
     plt.plot(ts2019.loc[ts2019['T_TeamID'] == tmid].corr()['O_Rank'])

@@ -276,7 +276,7 @@ def getSystemWeights(df, files):
     #This should only need to be run once, since it saves its results out to a CSV
     mo = pd.read_csv(files['MMasseyOrdinals'])
     weights_dict= {}
-    for season in np.arange(2011, 2020):
+    for season in list(set(mo['Season'])):
         wdf_season = df.loc[df['Season'] == season]
         mo_season = mo.loc[mo['Season'] == season]
         
@@ -290,7 +290,7 @@ def getSystemWeights(df, files):
             
             #Initialize system's score
             ranksys[idx]['rankscore'] = 0
-            for tid, team in sys.groupby(['T_TeamID']):
+            for tid, team in sys.groupby(['TeamID']):
                 if team.shape[0] < 2:
                     ranksys[idx][tid] = team['OrdinalRank'].values[0] * np.ones((wdf_season.loc[wdf_season['T_TeamID'] == tid].shape[0],))
                 else:

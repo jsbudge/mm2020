@@ -8,10 +8,8 @@ import numpy as np
 import pandas as pd
 import os
 from tqdm import tqdm
-from scipy.interpolate import CubicSpline
-from scipy import linalg
+from scipy.linalg import solve
 from scipy.stats import hmean
-from scipy.spatial.distance import mahalanobis
 import statsmodels.api as sm
 
 stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
@@ -22,7 +20,7 @@ id_cols = ['GameID', 'Season', 'DayNum', 'T_TeamID', 'O_TeamID']
 '''
 getFiles
 Creates a dict of names for easy file access. Does this in an operating-system
-agnostic way so we can work in Python and Windows.
+agnostic way so we can work in Linux and Windows.
 
 Params:
     fdir: String - Directory to search for files.
@@ -485,7 +483,7 @@ def lowess(x, y, w, x0=None, f=.1, n_iter=3):
             b = np.array([np.sum(weights * y), np.sum(weights * y * x)])
             A = np.array([[np.sum(weights), np.sum(weights * x)],
                         [np.sum(weights * x), np.sum(weights * x * x)]])
-            theta = linalg.solve(A, b)
+            theta = solve(A, b)
             yest[i] = theta[0] + theta[1] * x[i] 
         
         #use the residuals to modify weighting

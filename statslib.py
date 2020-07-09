@@ -11,6 +11,7 @@ from tqdm import tqdm
 from scipy.interpolate import CubicSpline
 from scipy import linalg
 from scipy.stats import hmean
+from scipy.spatial.distance import mahalanobis
 import statsmodels.api as sm
 
 stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
@@ -146,10 +147,13 @@ Returns:
 '''
 def getDiffs(df):
     ret = pd.DataFrame()
-    for st in stat_names:
-        ret[st + '_diff'] = df['T_' + st] - df['O_' + st]
-    for ids in id_cols:
-        ret[ids] = df[ids]
+    for col in df.columns:
+        if col[:2] == 'T_' and col != 'T_TeamID':
+            ret[col[2:] + '_diff'] = df['T_' + col[2:]] - df['O_' + col[2:]]
+        elif col[:2] == 'O_' and col != 'O_TeamID':
+            continue
+        else:
+            ret[col] = df[col]
     return ret
 
 '''
@@ -261,81 +265,76 @@ def loadTeamNames(file_dict):
 getSystemWeights
 Given a getGames DataFrame and a file dict, returns a DataFrame of weights
 where the index is the SystemName and the columns are the weighting of each
-system during each season. A higher number = a better weighting.
+system during each season. Scores are determined by the average value of 
+a 2D Gaussian probability density function based on the difference between 
+teams' ranking and the score of each game over the course of a season.
+A higher number = a better weighting.
 
 Params:
     df: DataFrame - getGames frame.
     files: Dict - getFiles dict.
 
 Returns:
-    sys_weights: DataFrame - frame of weightings for ranking systems. Index is
+    sweights: DataFrame - frame of weightings for ranking systems. Index is
                                 SystemName and the columns are the weightings
                                 corresponding to each season.
+    sprobs: DataFrame - frame showing percentage of correctly called
+                                games for ranking systems. Same index
+                                and columns as sweights.
 '''
 def getSystemWeights(df, files):
     #This should only need to be run once, since it saves its results out to a CSV
     mo = pd.read_csv(files['MMasseyOrdinals'])
-    weights_dict= {}
-    for season in list(set(mo['Season'])):
-        wdf_season = df.loc[df['Season'] == season]
+    sweights = pd.DataFrame(data=np.nan, index=list(set(mo['SystemName'])), columns=list(set(df['Season'])))
+    sprobs = pd.DataFrame(data=np.nan, index=list(set(mo['SystemName'])), columns=list(set(df['Season'])))
+    
+    #Chosen based on prior calculations. This is subjective, of course,
+    #but should be pretty close to reality.
+    gcov = np.linalg.pinv(np.array([[  226.274257  , -1141.89534807],
+                                 [-1141.89534807, 12188.28247383]]))
+    
+    #Zero mean since the differences are symmetrical in a duplicated dataframe.
+    gmu = np.array([0, 0])
+    gaus2d = lambda x, y: np.exp(-(gcov[0, 0] * (x - gmu[0])**2 + 2 * gcov[0, 1] * \
+                                   (x - gmu[0]) * (y - gmu[1]) + gcov[1, 1] * (y - gmu[1])**2))
+    diffs = getDiffs(df).sort_values('DayNum')
+    for season in sweights.columns:
+        wdf_diffs = diffs.loc[diffs['Season'] == season]
+        wdf_diffs['Rank_diff'] = 999
         mo_season = mo.loc[mo['Season'] == season]
-        
-        ranksys = {}; weights_dict[season] = {}
-        
         '''
         WEIGHTING SYSTEM FOR MASSEY ORDINALS
         '''
         for idx, sys in tqdm(mo_season.groupby(['SystemName'])):
-            ranksys[idx] = {}
-            
-            #Initialize system's score
-            ranksys[idx]['rankscore'] = 0
             for tid, team in sys.groupby(['TeamID']):
                 if team.shape[0] < 2:
-                    ranksys[idx][tid] = team['OrdinalRank'].values[0] * np.ones((wdf_season.loc[wdf_season['T_TeamID'] == tid].shape[0],))
+                    ranks = team['OrdinalRank'].values[0] * np.ones((wdf_diffs.loc[wdf_diffs['T_TeamID'] == tid].shape[0],))
                 else:
                     #Interpolate between system outputs to get a team's rank at the time of an actual game
-                    #This can be improved on, probably. Only using a Cubic Spline.
-                    fuunc = CubicSpline(team['RankingDayNum'], team['OrdinalRank'], bc_type='clamped')(wdf_season.loc[wdf_season['T_TeamID'] == tid, 'DayNum'])
-                    fuunc[wdf_season.loc[wdf_season['T_TeamID'] == tid, 'DayNum'] < team['RankingDayNum'].values[0]] = team['OrdinalRank'].values[0]
-                    ranksys[idx][tid] = fuunc
-                                                                                                                               
-        wdf_diffs = getDiffs(wdf_season)
-        max_score = wdf_diffs['Score_diff'].max()
-        for idx, row in tqdm(wdf_diffs.iterrows()):
-            for sys in ranksys:
-                try:
-                    #Modify rankscore by whether the system was correct AND
-                    #how many points they were correct by (e.g., if the game
-                    #was close or not
-                    ranksys[sys]['rankscore'] -= \
-                        (ranksys[sys][row['T_TeamID']][wdf_season.loc[wdf_season['T_TeamID'] == row['T_TeamID'], 'DayNum'] == row['DayNum']][0] \
-                         - ranksys[sys][row['O_TeamID']][wdf_season.loc[wdf_season['O_TeamID'] == row['O_TeamID'], 'DayNum'] == row['DayNum']][0]) / wdf_diffs.shape[0] * row['Score_diff'] / max_score
-                except:
-                    ranksys[sys]['rankscore'] -= 0
-                    
-        
-        for key in ranksys:
-            weights_dict[season][key] = ranksys[key]['rankscore']
+                    #This can be improved on, probably. Only using linear interpolation.
+                    ranks = np.interp(wdf_diffs.loc[wdf_diffs['T_TeamID'] == tid, 'DayNum'], 
+                                      team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
+                wdf_diffs.loc[wdf_diffs['T_TeamID'] == tid, 'T_Rank'] = ranks
+                wdf_diffs.loc[wdf_diffs['O_TeamID'] == tid, 'O_Rank'] = ranks
+            rdiff = wdf_diffs['T_Rank'] - wdf_diffs['O_Rank']
+            scores = gaus2d(wdf_diffs['Score_diff'], rdiff)
+            sweights.loc[idx, season] = sum(scores[np.logical_or(np.logical_and(rdiff < 0, 
+                                                                  wdf_diffs['Score_diff'] > 0),
+                                                                 np.logical_and(rdiff > 0, 
+                                                                  wdf_diffs['Score_diff'] < 0))]) / len(scores)
+            sprobs.loc[idx, season] = sum(np.logical_or(np.logical_and(rdiff < 0, 
+                                                         wdf_diffs['Score_diff'] > 0),
+                                                        np.logical_and(rdiff > 0, 
+                                                         wdf_diffs['Score_diff'] < 0))) / len(scores)
     
-    #Arrange the scores into a DataFrame to be saved out to a CSV
-    sys_weights = pd.DataFrame(index=list(set(mo['SystemName'])), columns=np.arange(2011, 2020))
-    for sys in list(set(mo['SystemName'])):
-        for season in np.arange(2011, 2020):
-            if sys in weights_dict[season]:
-                sys_weights.loc[sys, season] = weights_dict[season][sys]
-                
-    #Make sure all the weights are > 1 so we can use them in weighted averages and
-    #the like
-    sys_weights += abs(np.nanmin(sys_weights.astype(np.float64).values)) + 1
-    
-    sys_weights.to_csv('sys_weights.csv', index_label='SystemName')
-    return sys_weights
+    sweights.to_csv('sys_weights.csv', index_label='SystemName')
+    return sweights, sprobs
 
 '''
 getRanks
 Calculates overall rankings for each team for each season based on previously
-calculated weightings. Requires sys_weights.csv to already be in the directory.
+calculated weightings, using a LOESS fit to consolidate ranking systems. 
+Requires sys_weights.csv to already be in the directory.
 
 Params:
     df: DataFrame - getGames frame.
@@ -345,7 +344,7 @@ Returns:
     wdf: DataFrame - df with T_Rank and O_Rank columns added.
 '''
 def getRanks(df, files):
-    wdf = df.loc[df['Season'] >= 2011]
+    wdf = df.copy()
     wdf = wdf.sort_values('DayNum')
     weights = pd.read_csv('sys_weights.csv')
     wdf['T_Rank'] = 999
@@ -358,7 +357,7 @@ def getRanks(df, files):
         
         #Get DataFrame of all the relevant rankings and weightings for that season
         ranks = mo.loc[np.logical_and(mo['Season'] == idx[0], mo['TeamID'] == idx[1])].merge(weights, on='SystemName').sort_values('RankingDayNum')
-        
+
         #Calculate a weighted LOESS fit to the ranking curve. Gives more weight
         #to systems that are more accurate in that season
         wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
@@ -395,38 +394,41 @@ def addRanks(df):
 '''
 calcElos
 Runs through the entire frame and calculates Elo scores for each team, adding
-them to a separate dataframe. Saves the resultsto a CSV for ease of access later.
+them to a separate dataframe. Saves the results to a CSV for ease of access later.
+NOTE: Use one of the split=True frames to do this, it won't work as expected
+otherwise.
 
 Params:
     df: DataFrame - getGames frame.
+    K: float - Memory parameter, determines the exponential decay in the calculation.
+                35 is chosen based on percentage of correct matchup predictions.
+    margin: float - determines the 'margin of victory' parameter that 538 puts in to make Elo better.
+                4.5 is chosen based on percentage of correct matchup predictions.
     
 Returns:
     wdf: DataFrame - frame with GameID, T_TeamID, O_TeamID, T_Elo, and O_Elo columns.
 '''
-def calcElo(df):
+def calcElo(df, K=35, margin=4.5):
     tids = list(set(df['T_TeamID'].values))
     elos = dict(zip(list(tids), [1500] * len(tids)))
-    K = 20
     wdf = df[['GameID', 'T_TeamID', 'O_TeamID']]
-    wdf['T_Elo'] = 1500
-    wdf['O_Elo'] = 1500
+    wdf.loc[:, 'T_Elo'] = 1500
+    wdf.loc[:, 'O_Elo'] = 1500
     
-    for idx, day in tqdm(df.groupby(['GameID'])):
-        gm = day.iloc[0]
+    for idx, gm in tqdm(df.iterrows()):
         #Elo calculation stolen from 538
         elo_diff = elos[gm['T_TeamID']] - elos[gm['O_TeamID']]
         mov = gm['T_Score'] - gm['O_Score']
         elo_shift = 1. / (10. ** (-elo_diff / 400.) + 1.)
-        exp_margin = 7.5 + 0.006 * elo_diff
+        exp_margin = margin + 0.006 * elo_diff
         final_elo_update = K * ((mov + 3.) ** 0.8) / exp_margin * (1 - elo_shift)
         elos[gm['T_TeamID']] += final_elo_update
         elos[gm['O_TeamID']] -= final_elo_update
-        wdf.loc[np.logical_and(wdf['GameID'] == idx,
-                               wdf['T_TeamID'] == gm['T_TeamID']), ['T_Elo', 'O_Elo']] = [elos[gm['T_TeamID']],
-                                                                                          elos[gm['O_TeamID']]]
-        wdf.loc[np.logical_and(wdf['GameID'] == idx,
-                               wdf['O_TeamID'] == gm['T_TeamID']), ['T_Elo', 'O_Elo']] = [elos[gm['O_TeamID']],
-                                                                                          elos[gm['T_TeamID']]]
+        wdf.loc[idx, ['T_Elo', 'O_Elo']] = [elos[gm['T_TeamID']], elos[gm['O_TeamID']]]
+    wdf2 = wdf.copy()
+    wdf2['T_TeamID'], wdf2['O_TeamID'] = wdf['O_TeamID'], wdf['T_TeamID']
+    wdf2['T_Elo'], wdf2['O_Elo'] = wdf['O_Elo'], wdf['T_Elo']
+    wdf = wdf.append(wdf2, ignore_index=True)
     wdf.to_csv('elo_file.csv', index=False)
     return wdf
 

@@ -27,31 +27,21 @@ the college basketball model the best
 * Outlier potential. Some form of Mahalanobis using the covariance matrix
 of stats across the whole season. Might be good at predicting well-rounded teams.
 
-* Compute Elo ratings for teams, setting initial using the past season tournament
-results with a regression to the mean
-
 * Find some good defensive stats - relative to the rest of people, anyway.
+
+* Everything to do with Events. Haven't looked at them much.
+
 
 '''
 
 
 files = st.getFiles()
 ts = st.getGames(files['MRegularSeasonDetailedResults'])
-
-tt = st.getGames(files['MNCAATourneyDetailedResults'])
-ts = st.addRanks(ts)
-ts = st.addStats(ts)
-tt = st.addStats(tt)
-ts = st.addElos(ts)
-#ts = st.normalizeToSeason(ts)
-#tt = st.normalizeToSeason(tt)
-ts2019 = ts.loc[ts['Season'] == 2019]
-tt2019 = tt.loc[tt['Season'] == 2019]
-weights = st.getSystemWeights(ts2019, files)
-
-for tmid in [1140, 1181, 1101, 1438]:
-    plt.plot(ts2019.loc[ts2019['T_TeamID'] == tmid].corr()['O_Rank'])
-# rmns = st.getSeasonalStats(ts2019, strat='rank')
-# emns = st.getSeasonalStats(ts2019, strat='elo')
-# hmns = st.getSeasonalStats(ts2019, strat='hmean')
-# amns = st.getSeasonalStats(ts2019, strat='mest')
+ts2019 = ts.loc[ts['Season'] >= 2018]
+sweights = st.getSystemWeights(ts2019, files)
+ts2019 = st.getRanks(ts2019, files)
+wdf_diffs = st.getDiffs(ts2019)
+score = sum(np.logical_or(np.logical_and(wdf_diffs['Rank_diff'] < 0, 
+                         wdf_diffs['Score_diff'] > 0),
+                        np.logical_and(wdf_diffs['Rank_diff'] > 0, 
+                         wdf_diffs['Score_diff'] < 0))) / wdf_diffs.shape[0]

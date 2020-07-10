@@ -217,6 +217,7 @@ def getInfluenceStats(df):
         wdf.loc[opp_ids, 'eFGShift'] = (team['T_eFG%'].values - np.mean(team['T_eFG%'])) * 100
         wdf.loc[opp_ids, 'PossRed'] = team['T_Poss'].values - np.mean(team['T_Poss'])
     return wdf
+    
 
 '''
 getSeasonalStats
@@ -260,6 +261,17 @@ def getSeasonalStats(df, strat='rank'):
                                                            sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91),
                                                            np.average(grp['O_Rank'], weights=grp['O_Elo']),
                                                            grp.loc[grp['DayNum'] == grp['DayNum'].max(), 'T_Elo']]
+    return wdf
+
+def getTeamStats(df, av=False):
+    if av:
+        wdf = pd.DataFrame(index=df.index)
+    else:
+        wdf = df[id_cols].drop(columns=['O_TeamID'])
+    for col in df.columns:
+        if col not in id_cols:
+            if col[:2] == 'T_':
+                wdf[col] = df[col]
     return wdf
         
 '''

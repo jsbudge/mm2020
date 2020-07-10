@@ -17,6 +17,7 @@ import seaborn as sns
 from scipy.interpolate import CubicSpline
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from plotlib import PlotGenerator, showStat
 
 '''
 STUFF TO THINK ABOUT
@@ -37,11 +38,10 @@ of stats across the whole season. Might be good at predicting well-rounded teams
 
 files = st.getFiles()
 ts = st.getGames(files['MRegularSeasonDetailedResults'])
-ts2019 = ts.loc[ts['Season'] >= 2018]
-sweights = st.getSystemWeights(ts2019, files)
-ts2019 = st.getRanks(ts2019, files)
-wdf_diffs = st.getDiffs(ts2019)
-score = sum(np.logical_or(np.logical_and(wdf_diffs['Rank_diff'] < 0, 
-                         wdf_diffs['Score_diff'] > 0),
-                        np.logical_and(wdf_diffs['Rank_diff'] > 0, 
-                         wdf_diffs['Score_diff'] < 0))) / wdf_diffs.shape[0]
+ts = st.addRanks(ts)
+ts = st.addElos(ts)
+ts = st.addStats(ts)
+sts = st.getSeasonalStats(ts)
+#wdf = st.getInfluenceStats(ts)
+plotter = PlotGenerator(ts, sts, files)
+plotter.showTeamOverall(1140)

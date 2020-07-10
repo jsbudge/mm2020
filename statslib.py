@@ -197,6 +197,28 @@ def addStats(df):
     return df.fillna(0)
 
 '''
+getInfluenceStats
+Calculates a few additional stats that take into account how the game played
+changes a team's overall average.
+
+Params:
+    df: DataFrame - getGames frame.
+    
+Returns:
+    wdf: DataFrame - a frame with the calculated stats.
+'''
+def getInfluenceStats(df):
+    wdf = df[id_cols]
+    wdf['eFGShift'] = np.nan
+    wdf['PossRed'] = np.nan
+    for idx, team in tqdm(df.groupby(['Season', 'T_TeamID'])):
+        opp_ids = np.logical_and(wdf['O_TeamID'] == idx[1], 
+                               wdf['Season'] == idx[0])
+        wdf.loc[opp_ids, 'eFGShift'] = (team['T_eFG%'].values - np.mean(team['T_eFG%'])) * 100
+        wdf.loc[opp_ids, 'PossRed'] = team['T_Poss'].values - np.mean(team['T_Poss'])
+    return wdf
+
+'''
 getSeasonalStats
 Calculates a weighted mean on each statistical column
 and adds a few more stats that are valid for seasonal data.

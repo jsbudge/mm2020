@@ -1,46 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jun 30 13:31:29 2020
+Created on Mon Jul 13 10:05:31 2020
 
 @author: jeff
 
-Play script
+Cluster Analysis script.
 
-Stuff here gets added to statslib later.
+Looking at some of the teams involved in the tournament,
+how they compare to the average team.
+
+I wanted a more permanent scripting system for the different mathematical
+forays that I'm running.
 """
 
 import numpy as np
+import pylab as plab
 import pandas as pd
 import statslib as st
 import seaborn as sns
-from scipy.interpolate import CubicSpline
-from tqdm import tqdm
 import matplotlib.pyplot as plt
 from plotlib import PlotGenerator, showStat
-from sklearn.decomposition import KernelPCA
-from sklearn.cluster import AffinityPropagation, DBSCAN
-
-'''
-STUFF TO THINK ABOUT
-
-* Exponent on the Pythagorean Wins formula. Try with different ones, see which fits
-the college basketball model the best
-
-* Outlier potential. Some form of Mahalanobis using the covariance matrix
-of stats across the whole season. Might be good at predicting well-rounded teams.
-
-* Find some good defensive stats - relative to the rest of people, anyway.
-
-* Everything to do with Events. Haven't looked at them much.
-
-* See if there's a way to quantify teams based on statistical profile -
-for example, offensive vs. defensive or fast vs. slow. 
-
-* Analyze shifts between tournament and regular season. Is there a way to predict
-those?
-'''
-
 
 files = st.getFiles()
 ts = st.getGames(files['MRegularSeasonDetailedResults'])

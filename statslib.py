@@ -126,10 +126,16 @@ Returns:
 This modifies the DataFrame in place and returns it.
 '''
 def normalizeToSeason(df):
-    for season, sdf in df.groupby(['Season']):
-        for col in sdf.columns:
-            if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'T_TeamID', 'O_TeamID', 'NumOT']:
-                df.loc[df['Season'] == season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
+    if 'Season' in df.columns:
+        for season, sdf in df.groupby(['Season']):
+            for col in sdf.columns:
+                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'T_TeamID', 'O_TeamID', 'NumOT']:
+                    df.loc[df['Season'] == season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
+    elif 'Season' in df.index.names:
+        for season, sdf in df.groupby('Season'):
+            for col in sdf.columns:
+                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'T_TeamID', 'O_TeamID', 'NumOT']:
+                    df.loc[season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
     return df
 
 '''
@@ -153,6 +159,25 @@ def getDiffs(df):
         else:
             ret[col] = df[col]
     return ret
+
+def getTourneyStats(tdf, sdf):
+    wdf = pd.DataFrame(index=sdf.index)
+    wdf['GameRank'] = 0
+    for idx, team in tdf.groupby(['Season', 'T_TeamID']):
+        if team.shape[0] < 6:
+            loss = -1
+            pts_added = np.exp(-.1 * abs(team['T_Score'].values[-1] - team['O_Score'].values[-1]))
+        else:
+            if team['T_Score'].values[-1] > team['O_Score'].values[-1]:
+                loss = 0
+                pts_added = 1 - np.exp(-.1 * abs(team['T_Score'].values[-1] - team['O_Score'].values[-1]))
+            else:
+                loss = -1
+                pts_added = np.exp(-.1 * abs(team['T_Score'].values[-1] - team['O_Score'].values[-1]))
+        
+        wdf.loc[idx, 'GameRank'] = team.shape[0] + loss
+        wdf.loc[idx, 'AdjGameRank'] = team.shape[0] + loss + pts_added
+    return wdf
 
 '''
 addStats

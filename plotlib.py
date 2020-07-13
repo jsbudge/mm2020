@@ -41,7 +41,7 @@ class PlotGenerator(object):
         season = self.default_season if season is None else season
         if type(tid) == str:
             tid = self.names[tid]
-        tdf = self.df.loc[self.df['T_TeamID'] == tid]
+        tdf = self.df.loc[self.df['TID'] == tid]
         tdf = tdf.loc[tdf['Season'] == season]
         sdata = self.sdf.loc(axis=0)[season, :]
         sdata = (sdata - sdata.mean()) / sdata.std()
@@ -79,7 +79,7 @@ class PlotGenerator(object):
         
 def showStat(df, stat, season, tid):
     tdf = df.loc[np.logical_and(df['Season'] == season,
-                                   df['T_TeamID'] == tid)].sort_values('DayNum')
+                                   df['TID'] == tid)].sort_values('DayNum')
     plt.figure()
     plt.plot(tdf['DayNum'], 
              tdf[stat])

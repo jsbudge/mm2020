@@ -41,27 +41,34 @@ for example, offensive vs. defensive or fast vs. slow.
 those?
 '''
 
-
+'''
+This is the procedure to load all the rank, elo, weights, etc.
+CSV files
+'''
 files = st.getFiles()
 ts = st.getGames(files['MRegularSeasonDetailedResults'])
-tt = st.getGames(files['MNCAATourneyDetailedResults'])
+ts_split = st.getGames(files['MRegularSeasonDetailedResults'], split=True)[0]
+weights = st.getSystemWeights(ts, files)
+ranks = st.getRanks(ts, files)
+elos = st.calcElo(ts_split)
+
+#Add each of them onto the frame to get a fully loaded frame
 ts = st.addRanks(ts)
 ts = st.addElos(ts)
-ts = st.addStats(ts)
-ts2019 = ts.loc[ts['Season'] == 2019]
-tt2019 = tt.loc[tt['Season'] == 2019].groupby(['Season', 'T_TeamID']).mean()
-tte = pd.DataFrame(index=tt2019.index)
-sts = st.getSeasonalStats(ts2019)
-wdf = st.getTeamStats(sts, True)
-wdf = wdf.drop(columns=['T_Rank', 'T_Elo', 'T_SoS', 'T_Win%', 'T_PythWin%'])
-stse = tte.merge(wdf, left_index=True, right_index=True)
-plotter = PlotGenerator(tt, stse, files, season=2019)
 
-kpca = KernelPCA(n_components=5)
-pcadf = pd.DataFrame(data=kpca.fit_transform(wdf), index=wdf.index)
-aprop = AffinityPropagation(damping=.6)
-dbs = DBSCAN(eps=1)
-test = aprop.fit(pcadf)
+#Get frames with advanced stats
+tsa = st.getStats(ts)
 
-for clust in test.cluster_centers_indices_:
-    plotter.showTeamOverall(sts.index.get_level_values(1)[clust])
+#Get frame with shift stats
+ts_shift = st.getInfluenceStats(tsa)
+
+#Merge everything together
+tsfull = st.joinFrame(ts, tsa)
+tsfull = st.joinFrame(tsfull, ts_shift)
+
+#Get seasonally averaged stats
+sts = st.getSeasonalStats(tsfull)
+
+plotter = PlotGenerator(tsfull, sts, files, season=2019)
+
+plotter.showTeamOverall(1140)

@@ -14,7 +14,7 @@ import statsmodels.api as sm
 
 stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
               'OR', 'DR', 'Ast', 'TO', 'Stl', 'Blk', 'PF']
-id_cols = ['GameID', 'Season', 'DayNum', 'T_TeamID', 'O_TeamID']
+id_cols = ['GameID', 'Season', 'DayNum', 'TID', 'OID']
 
 
 '''
@@ -99,10 +99,11 @@ def getGames(fnme, split=False):
                 ret = ret.rename(columns={col: col[:-2]})
             elif col[-2:] == '_y':
                 ret = ret.drop(columns=[col])
+        ret = ret.rename(columns={'T_TeamID': 'TID', 'O_TeamID': 'OID'})
         return ret
     else:
-        w = wdf_1.merge(ldf_1, on=id_cols)
-        l = wdf_2.merge(ldf_2, on=id_cols)
+        w = wdf_1.merge(ldf_1, on=['GameID', 'Season', 'DayNum', 'T_TeamID', 'O_TeamID'])
+        l = wdf_2.merge(ldf_2, on=['GameID', 'Season', 'DayNum', 'T_TeamID', 'O_TeamID'])
         for col in w.columns:
             if col[-2:] == '_x':
                 w = w.rename(columns={col: col[:-2]})
@@ -110,37 +111,38 @@ def getGames(fnme, split=False):
             elif col[-2:] == '_y':
                 w = w.drop(columns=[col])
                 l = l.drop(columns=[col])
+        w = w.rename(columns={'T_TeamID': 'TID', 'O_TeamID': 'OID'})
+        l = l.rename(columns={'T_TeamID': 'TID', 'O_TeamID': 'OID'})
         return w, l
          
 '''
 normalizeToSeason
 Modifies a DataFrame so each statistical columns has zero mean and a standard
-deviation of one. Modifies in-place.
+deviation of one.
 
 Params:
     df: DataFrame - frame to normalize.
     
 Returns:
     df: DataFrame - normalized frame.
-
-This modifies the DataFrame in place and returns it.
 '''
 def normalizeToSeason(df):
+    wdf = df.copy()
     if 'Season' in df.columns:
         for season, sdf in df.groupby(['Season']):
             for col in sdf.columns:
-                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'T_TeamID', 'O_TeamID', 'NumOT']:
-                    df.loc[df['Season'] == season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
+                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
+                    wdf.loc[df['Season'] == season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
     elif 'Season' in df.index.names:
         for season, sdf in df.groupby('Season'):
             for col in sdf.columns:
-                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'T_TeamID', 'O_TeamID', 'NumOT']:
-                    df.loc[season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
-    return df
+                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
+                    wdf.loc[season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
+    return wdf
 
 '''
 getDiffs
-Get differences of each statistical column. Modifies in-place.
+Get differences of each statistical column.
 
 Params:
     df: DataFrame - getGames frame.
@@ -152,18 +154,31 @@ Returns:
 def getDiffs(df):
     ret = pd.DataFrame()
     for col in df.columns:
-        if col[:2] == 'T_' and col != 'T_TeamID':
+        if col[:2] == 'T_':
             ret[col[2:] + '_diff'] = df['T_' + col[2:]] - df['O_' + col[2:]]
-        elif col[:2] == 'O_' and col != 'O_TeamID':
+        elif col[:2] == 'O_':
             continue
         else:
             ret[col] = df[col]
     return ret
 
+'''
+getTourneyStats
+Adds various advanced statistical columns to a DataFrame based on tournament
+play.
+
+Params:
+    tdf: DataFrame - getGames frame of tournament data.
+    sdf: DataFrame - getGames frame run through getSeasonalStats function,
+                        the averages for the season.
+    
+Returns:
+    wdf: DataFrame - augmented frame.
+'''
 def getTourneyStats(tdf, sdf):
     wdf = pd.DataFrame(index=sdf.index)
     wdf['GameRank'] = 0
-    for idx, team in tdf.groupby(['Season', 'T_TeamID']):
+    for idx, team in tdf.groupby(['Season', 'TID']):
         if team.shape[0] < 6:
             loss = -1
             pts_added = np.exp(-.1 * abs(team['T_Score'].values[-1] - team['O_Score'].values[-1]))
@@ -180,46 +195,51 @@ def getTourneyStats(tdf, sdf):
     return wdf
 
 '''
-addStats
-Adds various advanced statistical columns to a DataFrame. Modifies in-place.
+getStats
+Adds various advanced statistical columns to a DataFrame.
 
 Params:
     df: DataFrame - getGames frame.
     
 Returns:
-    df: DataFrame - augmented frame.
+    wdf: DataFrame - augmented frame.
 '''
-def addStats(df):
-    df['T_FG%'] = df['T_FGM'] / df['T_FGA']
-    df['T_PPS'] = (df['T_Score'] - df['T_FTM']) / df['T_FGA']
-    df['T_eFG%'] = (df['T_FGM'] + .5 * df['T_FGM3']) / df['T_FGA']
-    df['T_TS%'] = df['T_Score'] / (2 * (df['T_FGA'] + .44 * df['T_FTA']))
-    df['T_Econ'] = df['T_Ast'] + df['T_Stl'] - df['T_TO']
-    df['T_Poss'] = .96 * (df['T_FGA'] - df['T_OR'] + df['T_TO'] + .44 * df['T_FTA'])
-    df['T_OffRat'] = df['T_Score'] * 100 / df['T_Poss']
-    df['T_R%'] = (df['T_OR'] + df['T_DR']) / (df['T_OR'] + df['T_DR'] + df['O_OR'] + df['O_DR'])
-    df['T_Ast%'] = df['T_Ast'] / df['T_FGM']
-    df['T_3Two%'] = df['T_FGA3'] / df['T_FGA']
-    df['T_FT/A'] = df['T_FTA'] / df['T_FGA']
-    df['T_FT%'] = df['T_FTM'] / df['T_FTA']
+def getStats(df):
+    wdf = df[id_cols]
+    wdf['T_FG%'] = df['T_FGM'] / df['T_FGA']
+    wdf['T_PPS'] = (df['T_Score'] - df['T_FTM']) / df['T_FGA']
+    wdf['T_eFG%'] = (df['T_FGM'] + .5 * df['T_FGM3']) / df['T_FGA']
+    wdf['T_TS%'] = df['T_Score'] / (2 * (df['T_FGA'] + .44 * df['T_FTA']))
+    wdf['T_Econ'] = df['T_Ast'] + df['T_Stl'] - df['T_TO']
+    wdf['T_Poss'] = .96 * (df['T_FGA'] - df['T_OR'] + df['T_TO'] + .44 * df['T_FTA'])
+    wdf['T_OffRat'] = df['T_Score'] * 100 / wdf['T_Poss']
+    wdf['T_R%'] = (df['T_OR'] + df['T_DR']) / (df['T_OR'] + df['T_DR'] + df['O_OR'] + df['O_DR'])
+    wdf['T_Ast%'] = df['T_Ast'] / df['T_FGM']
+    wdf['T_3Two%'] = df['T_FGA3'] / df['T_FGA']
+    wdf['T_FT/A'] = df['T_FTA'] / df['T_FGA']
+    wdf['T_FT%'] = df['T_FTM'] / df['T_FTA']
+    wdf['T_TO%'] = df['T_TO'] / wdf['T_Poss']
      
-    df['O_FG%'] = df['O_FGM'] / df['O_FGA']
-    df['O_PPS'] = (df['O_Score'] - df['O_FTM']) / df['O_FGA']
-    df['O_eFG%'] = (df['O_FGM'] + .5 * df['O_FGM3']) / df['O_FGA']
-    df['O_TS%'] = df['O_Score'] / (2 * (df['O_FGA'] + .44 * df['O_FTA']))
-    df['O_Econ'] = df['O_Ast'] + df['O_Stl'] - df['O_TO']
-    df['O_Poss'] = .96 * (df['O_FGA'] - df['O_OR'] + df['O_TO'] + .44 * df['O_FTA'])
-    df['O_OffRat'] = df['O_Score'] * 100 / df['O_Poss']
-    df['O_R%'] = 1 - df['T_R%']
-    df['O_Ast%'] = df['O_Ast'] / df['O_FGM']
-    df['O_3Two%'] = df['O_FGA3'] / df['O_FGA']
-    df['O_FT/A'] = df['O_FTA'] / df['O_FGA']
-    df['O_FT%'] = df['O_FTM'] / df['O_FTA']
+    wdf['O_FG%'] = df['O_FGM'] / df['O_FGA']
+    wdf['O_PPS'] = (df['O_Score'] - df['O_FTM']) / df['O_FGA']
+    wdf['O_eFG%'] = (df['O_FGM'] + .5 * df['O_FGM3']) / df['O_FGA']
+    wdf['O_TS%'] = df['O_Score'] / (2 * (df['O_FGA'] + .44 * df['O_FTA']))
+    wdf['O_Econ'] = df['O_Ast'] + df['O_Stl'] - df['O_TO']
+    wdf['O_Poss'] = .96 * (df['O_FGA'] - df['O_OR'] + df['O_TO'] + .44 * df['O_FTA'])
+    wdf['O_OffRat'] = df['O_Score'] * 100 / wdf['O_Poss']
+    wdf['O_R%'] = 1 - wdf['T_R%']
+    wdf['O_Ast%'] = df['O_Ast'] / df['O_FGM']
+    wdf['O_3Two%'] = df['O_FGA3'] / df['O_FGA']
+    wdf['O_FT/A'] = df['O_FTA'] / df['O_FGA']
+    wdf['O_FT%'] = df['O_FTM'] / df['O_FTA']
+    wdf['O_TO%'] = df['O_TO'] / wdf['O_Poss']
     
-    df['T_DefRat'] = df['O_OffRat']
-    df['O_DefRat'] = df['T_OffRat']
+    wdf['T_DefRat'] = wdf['O_OffRat']
+    wdf['O_DefRat'] = wdf['T_OffRat']
+    wdf['T_GameScore'] = 40 * wdf['T_eFG%'] + 20 * wdf['T_R%'] + 15 * wdf['T_FT/A'] + 25 - 25 * wdf['T_TO%']
+    wdf['O_GameScore'] = 40 * wdf['O_eFG%'] + 20 * wdf['O_R%'] + 15 * wdf['O_FT/A'] + 25 - 25 * wdf['O_TO%']
     
-    return df.fillna(0)
+    return wdf.fillna(0)
 
 '''
 getInfluenceStats
@@ -234,13 +254,15 @@ Returns:
 '''
 def getInfluenceStats(df):
     wdf = df[id_cols]
-    wdf['eFGShift'] = np.nan
-    wdf['PossRed'] = np.nan
-    for idx, team in tqdm(df.groupby(['Season', 'T_TeamID'])):
-        opp_ids = np.logical_and(wdf['O_TeamID'] == idx[1], 
+    for col in df.columns:
+        if 'T_' in col:
+            wdf[col[2:] + 'Shift'] = np.nan
+    for idx, team in tqdm(df.groupby(['Season', 'TID'])):
+        opp_ids = np.logical_and(wdf['OID'] == idx[1], 
                                wdf['Season'] == idx[0])
-        wdf.loc[opp_ids, 'eFGShift'] = (team['T_eFG%'].values - np.mean(team['T_eFG%'])) * 100
-        wdf.loc[opp_ids, 'PossRed'] = team['T_Poss'].values - np.mean(team['T_Poss'])
+        for col in team.columns:
+            if 'T_' in col:
+                wdf.loc[opp_ids, col[2:] + 'Shift'] = team[col].values - np.mean(team[col])
     return wdf
     
 
@@ -263,13 +285,13 @@ Returns:
                         and added stats for that team.
 '''
 def getSeasonalStats(df, strat='rank'):
-    tcols = df.columns.drop(['Season', 'T_TeamID', 'GameID', 'GLoc', 'DayNum', 'O_TeamID'])
-    wdf = df.groupby(['Season', 'T_TeamID']).mean().drop(columns=['GameID', 'GLoc', 'DayNum', 'O_TeamID'])
+    tcols = df.columns.drop(['Season', 'TID', 'GameID', 'GLoc', 'DayNum', 'OID'])
+    wdf = df.groupby(['Season', 'TID']).mean().drop(columns=['GameID', 'GLoc', 'DayNum', 'OID'])
     wdf['T_Win%'] = 0
     wdf['T_PythWin%'] = 0
     wdf['T_SoS'] = 0
     
-    for idx, grp in tqdm(df.groupby(['Season', 'T_TeamID'])):
+    for idx, grp in tqdm(df.groupby(['Season', 'TID'])):
         for col in tcols:
             if strat == 'rank':
                 wdf.loc[idx, col] = np.average(grp[col], weights=400 - grp['O_Rank'].values)
@@ -282,17 +304,31 @@ def getSeasonalStats(df, strat='rank'):
                 awave = sm.robust.norms.AndrewWave(grp[col].std())
                 med = np.median(grp[col])
                 wdf.loc[idx, col] = np.average(grp[col], weights=awave.weights(grp[col] - med))
+            elif strat == 'mean':
+                wdf.loc[idx, col] = grp[col].mean()
         wdf.loc[idx, ['T_Win%', 'T_PythWin%', 'T_SoS', 'T_Elo']] = [sum(grp['T_Score'] > grp['O_Score']) / grp.shape[0],
                                                            sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91),
                                                            np.average(grp['O_Rank'], weights=grp['O_Elo']),
                                                            grp.loc[grp['DayNum'] == grp['DayNum'].max(), 'T_Elo']]
     return wdf
 
+'''
+getTeamStats
+Gets a frame of only 'T_' stats, so we can look at a team's stats
+without opponent involvement.
+
+Params:
+    df: DataFrame - getGames frame.
+    av: bool - whether or not our frame is an averaged frame.
+    
+Returns:
+    wdf: DataFrame - frame with all opponent stuff stripped.
+'''
 def getTeamStats(df, av=False):
     if av:
         wdf = pd.DataFrame(index=df.index)
     else:
-        wdf = df[id_cols].drop(columns=['O_TeamID'])
+        wdf = df[id_cols].drop(columns=['OID'])
     for col in df.columns:
         if col not in id_cols:
             if col[:2] == 'T_':
@@ -365,14 +401,14 @@ def getSystemWeights(df, files):
         for idx, sys in tqdm(mo_season.groupby(['SystemName'])):
             for tid, team in sys.groupby(['TeamID']):
                 if team.shape[0] < 2:
-                    ranks = team['OrdinalRank'].values[0] * np.ones((wdf_diffs.loc[wdf_diffs['T_TeamID'] == tid].shape[0],))
+                    ranks = team['OrdinalRank'].values[0] * np.ones((wdf_diffs.loc[wdf_diffs['TID'] == tid].shape[0],))
                 else:
                     #Interpolate between system outputs to get a team's rank at the time of an actual game
                     #This can be improved on, probably. Only using linear interpolation.
-                    ranks = np.interp(wdf_diffs.loc[wdf_diffs['T_TeamID'] == tid, 'DayNum'], 
+                    ranks = np.interp(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'], 
                                       team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
-                wdf_diffs.loc[wdf_diffs['T_TeamID'] == tid, 'T_Rank'] = ranks
-                wdf_diffs.loc[wdf_diffs['O_TeamID'] == tid, 'O_Rank'] = ranks
+                wdf_diffs.loc[wdf_diffs['TID'] == tid, 'T_Rank'] = ranks
+                wdf_diffs.loc[wdf_diffs['OID'] == tid, 'O_Rank'] = ranks
             rdiff = wdf_diffs['T_Rank'] - wdf_diffs['O_Rank']
             scores = gaus2d(wdf_diffs['Score_diff'], rdiff)
             sweights.loc[idx, season] = sum(scores[np.logical_or(np.logical_and(rdiff < 0, 
@@ -408,7 +444,7 @@ def getRanks(df, files):
     wdf['O_Rank'] = 999
     mo = pd.read_csv(files['MMasseyOrdinals'])
     
-    for idx, grp in tqdm(wdf.groupby(['Season', 'T_TeamID'])):
+    for idx, grp in tqdm(wdf.groupby(['Season', 'TID'])):
         #Sort values by GameID so they're in chronological order
         grp = grp.sort_values('GameID')
         
@@ -418,17 +454,17 @@ def getRanks(df, files):
         #Calculate a weighted LOESS fit to the ranking curve. Gives more weight
         #to systems that are more accurate in that season
         wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
-                               wdf['T_TeamID'] == idx[1]), 'T_Rank'] = lowess(ranks['RankingDayNum'].values, 
+                               wdf['TID'] == idx[1]), 'T_Rank'] = lowess(ranks['RankingDayNum'].values, 
                                        ranks['OrdinalRank'].values, 
                                        ranks[str(idx[0])].values, x0=grp['DayNum'], f=.25)
                                                                               
         #Apply these rankings to games where this team was the opponent
         wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
-                               wdf['O_TeamID'] == idx[1]), 'O_Rank'] = wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
-                               wdf['T_TeamID'] == idx[1]), 'T_Rank'].values
+                               wdf['OID'] == idx[1]), 'O_Rank'] = wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
+                               wdf['TID'] == idx[1]), 'T_Rank'].values
     
     #Save results out to a CSV so we don't have to wait for it to calculate these every time
-    rank_df = wdf[['Season', 'GameID', 'DayNum', 'T_TeamID', 'O_TeamID', 'O_Rank', 'T_Rank']]
+    rank_df = wdf[['Season', 'GameID', 'DayNum', 'TID', 'OID', 'O_Rank', 'T_Rank']]
     rank_df.to_csv('rank_file.csv', index=False)
     return wdf
 
@@ -445,7 +481,7 @@ Returns:
 '''
 def addRanks(df):
     rdf = pd.read_csv('rank_file.csv')
-    wdf = df.merge(rdf, on=['Season', 'GameID', 'DayNum', 'T_TeamID', 'O_TeamID'])
+    wdf = df.merge(rdf, on=['Season', 'GameID', 'DayNum', 'TID', 'OID'])
     return wdf
 
 '''
@@ -463,27 +499,27 @@ Params:
                 4.5 is chosen based on percentage of correct matchup predictions.
     
 Returns:
-    wdf: DataFrame - frame with GameID, T_TeamID, O_TeamID, T_Elo, and O_Elo columns.
+    wdf: DataFrame - frame with GameID, TID, OID, T_Elo, and O_Elo columns.
 '''
 def calcElo(df, K=35, margin=4.5):
-    tids = list(set(df['T_TeamID'].values))
+    tids = list(set(df['TID'].values))
     elos = dict(zip(list(tids), [1500] * len(tids)))
-    wdf = df[['GameID', 'T_TeamID', 'O_TeamID']]
+    wdf = df[['GameID', 'TID', 'OID']]
     wdf.loc[:, 'T_Elo'] = 1500
     wdf.loc[:, 'O_Elo'] = 1500
     
     for idx, gm in tqdm(df.iterrows()):
         #Elo calculation stolen from 538
-        elo_diff = elos[gm['T_TeamID']] - elos[gm['O_TeamID']]
+        elo_diff = elos[gm['TID']] - elos[gm['OID']]
         mov = gm['T_Score'] - gm['O_Score']
         elo_shift = 1. / (10. ** (-elo_diff / 400.) + 1.)
         exp_margin = margin + 0.006 * elo_diff
         final_elo_update = K * ((mov + 3.) ** 0.8) / exp_margin * (1 - elo_shift)
-        elos[gm['T_TeamID']] += final_elo_update
-        elos[gm['O_TeamID']] -= final_elo_update
-        wdf.loc[idx, ['T_Elo', 'O_Elo']] = [elos[gm['T_TeamID']], elos[gm['O_TeamID']]]
+        elos[gm['TID']] += final_elo_update
+        elos[gm['OID']] -= final_elo_update
+        wdf.loc[idx, ['T_Elo', 'O_Elo']] = [elos[gm['TID']], elos[gm['OID']]]
     wdf2 = wdf.copy()
-    wdf2['T_TeamID'], wdf2['O_TeamID'] = wdf['O_TeamID'], wdf['T_TeamID']
+    wdf2['TID'], wdf2['OID'] = wdf['OID'], wdf['TID']
     wdf2['T_Elo'], wdf2['O_Elo'] = wdf['O_Elo'], wdf['T_Elo']
     wdf = wdf.append(wdf2, ignore_index=True)
     wdf.to_csv('elo_file.csv', index=False)
@@ -502,8 +538,22 @@ Returns:
 '''
 def addElos(df):
     rdf = pd.read_csv('elo_file.csv')
-    df = df.merge(rdf, on=['GameID', 'T_TeamID', 'O_TeamID'])
+    df = df.merge(rdf, on=['GameID', 'TID', 'OID'])
     return df
+
+'''
+joinFrame
+Merges two getGames frames on their id columns.
+
+Params:
+    df1: DataFrame - getGames frame.
+    df2: DataFrame - getGames frame.
+    
+Returns:
+    df: DataFrame - df1 and df2, merged on id columns.
+'''
+def joinFrame(df1, df2):
+    return df1.merge(df2, on=['GameID', 'Season', 'DayNum', 'TID', 'OID'])
             
 
 '''

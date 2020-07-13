@@ -23,8 +23,10 @@ import pandas as pd
 import statslib as st
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 from sklearn.linear_model import HuberRegressor, Lars, ElasticNet, Lasso, SGDRegressor, TheilSenRegressor, \
     ARDRegression, LassoLars
+from sklearn.decomposition import KernelPCA
 from plotlib import PlotGenerator, showStat
 
 split_yr = 2013
@@ -33,44 +35,52 @@ ts = st.getGames(files['MRegularSeasonDetailedResults']).drop(columns=['NumOT'])
 tt = st.getGames(files['MNCAATourneyDetailedResults']).drop(columns=['NumOT'])
 ts = st.addRanks(ts)
 ts = st.addElos(ts)
-ts = st.addStats(ts)
-ts2019 = ts.loc[ts['Season'] == 2019]
-tt2019 = tt.loc[tt['Season'] == 2019]
-tte = pd.DataFrame(index=tt.groupby(['Season', 'T_TeamID']).mean().index)
-sts = st.getSeasonalStats(ts, strat='hmean')
+ts = st.joinFrame(ts, st.getStats(ts))
+tte = pd.DataFrame(index=tt.groupby(['Season', 'TID']).mean().index)
+sts = st.getSeasonalStats(ts, strat='mean')
 
 ttsts = tte.merge(sts, left_index=True, right_index=True)
 tspecstats = st.getTourneyStats(tt, ttsts)
 
 ttnorm = st.normalizeToSeason(ttsts)
 tsnorm = st.normalizeToSeason(sts)
+
+kpca = KernelPCA(n_components=30, kernel='poly')
+clusterdf = pd.DataFrame(index=ttnorm.index, data=kpca.fit_transform(ttnorm))
 plt.close('all')
 nms = ['Huber', 'ThielSen', 'SGD', 'ARD']
+f = plt.figure()
+gd = gridspec.GridSpec(len(nms), 2, figure=f)
 for n, lm in enumerate([HuberRegressor(max_iter=1000), TheilSenRegressor(), SGDRegressor(),
                         ARDRegression()]):
-    lm.fit(ttsts.loc(axis=0)[ttnorm.index.get_level_values(0) < split_yr, :],
+    lm.fit(clusterdf.loc(axis=0)[ttnorm.index.get_level_values(0) < split_yr, :],
               tspecstats['GameRank'][tspecstats.index.get_level_values(0) < split_yr])
     tspecstats[nms[n] + 'Rank'] = 0
-    tspecstats[nms[n] + 'Rank'] = lm.predict(ttnorm)
+    tspecstats[nms[n] + 'Rank'] = lm.predict(clusterdf)
     
-    plt.figure(nms[n])
+    f.add_subplot(gd[n, 0])
+    plt.title(nms[n])
     plt.scatter(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, 'GameRank'],
                 tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, nms[n] + 'Rank'])
-    plt.figure(nms[n] + '_dist')
+    f.add_subplot(gd[n, 1])
+    plt.title('Dist')
     for r in range(7):
         sns.distplot(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr].loc[tspecstats['GameRank'] == r, nms[n] + 'Rank'])
-
 final_reg = SGDRegressor(loss='huber')
 final_reg.fit(tspecstats.loc[ttsts.index.get_level_values(0) < split_yr, 
                              [n + 'Rank' for n in nms]],
               tspecstats['GameRank'][tspecstats.index.get_level_values(0) < split_yr])
-tspecstats['CompRank'] = 0
-tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, 
-               'CompRank'] = final_reg.predict(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, 
-                             [n + 'Rank' for n in nms]])
-plt.figure('Composite')
-plt.scatter(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, 'GameRank'],
-            tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, 'CompRank'])
-plt.figure('Composite_dist')
-for r in range(7):
-    sns.distplot(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr].loc[tspecstats['GameRank'] == r, 'CompRank'])
+tspecstats['CompRank'] = final_reg.predict(tspecstats[[n + 'Rank' for n in nms]])
+tspecstats['MeanRank'] = tspecstats[[n + 'Rank' for n in nms]].mean(axis=1).values
+tspecstats['SumRank'] = tspecstats[[n + 'Rank' for n in nms]].sum(axis=1).values
+f2 = plt.figure()
+gd2 = gridspec.GridSpec(3, 2, figure=f2)
+for n, lm in enumerate(['Comp', 'Mean', 'Sum']):
+    f2.add_subplot(gd2[n, 0])
+    plt.title(lm)
+    plt.scatter(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, 'GameRank'],
+                tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, lm + 'Rank'])
+    f2.add_subplot(gd2[n, 1])
+    plt.title('Dist')
+    for r in range(7):
+        sns.distplot(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr].loc[tspecstats['GameRank'] == r, lm + 'Rank'])

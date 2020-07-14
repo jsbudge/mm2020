@@ -45,8 +45,8 @@ tspecstats = st.getTourneyStats(tt, ttsts)
 ttnorm = st.normalizeToSeason(ttsts)
 tsnorm = st.normalizeToSeason(sts)
 
-kpca = KernelPCA(n_components=30, kernel='poly')
-clusterdf = pd.DataFrame(index=ttnorm.index, data=kpca.fit_transform(ttnorm))
+kpca = KernelPCA(n_components=15, kernel='linear')
+clusterdf = pd.DataFrame(index=ttnorm.index, data=kpca.fit_transform(ttnorm)) #ttnorm.copy()
 plt.close('all')
 nms = ['Huber', 'ThielSen', 'SGD', 'ARD']
 f = plt.figure()
@@ -66,16 +66,16 @@ for n, lm in enumerate([HuberRegressor(max_iter=1000), TheilSenRegressor(), SGDR
     plt.title('Dist')
     for r in range(7):
         sns.distplot(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr].loc[tspecstats['GameRank'] == r, nms[n] + 'Rank'])
-final_reg = SGDRegressor(loss='huber')
-final_reg.fit(tspecstats.loc[ttsts.index.get_level_values(0) < split_yr, 
-                             [n + 'Rank' for n in nms]],
-              tspecstats['GameRank'][tspecstats.index.get_level_values(0) < split_yr])
-tspecstats['CompRank'] = final_reg.predict(tspecstats[[n + 'Rank' for n in nms]])
+        
 tspecstats['MeanRank'] = tspecstats[[n + 'Rank' for n in nms]].mean(axis=1).values
 tspecstats['SumRank'] = tspecstats[[n + 'Rank' for n in nms]].sum(axis=1).values
+tspecstats['MaxRank'] = tspecstats[[n + 'Rank' for n in nms]].max(axis=1).values
+tspecstats['MinRank'] = tspecstats[[n + 'Rank' for n in nms]].min(axis=1).values
+tspecstats['MedianRank'] = tspecstats[[n + 'Rank' for n in nms]].median(axis=1).values
+
 f2 = plt.figure()
-gd2 = gridspec.GridSpec(3, 2, figure=f2)
-for n, lm in enumerate(['Comp', 'Mean', 'Sum']):
+gd2 = gridspec.GridSpec(5, 2, figure=f2)
+for n, lm in enumerate(['Mean', 'Sum', 'Max', 'Min', 'Median']):
     f2.add_subplot(gd2[n, 0])
     plt.title(lm)
     plt.scatter(tspecstats.loc[ttsts.index.get_level_values(0) >= split_yr, 'GameRank'],

@@ -205,7 +205,7 @@ Returns:
     wdf: DataFrame - augmented frame.
 '''
 def getStats(df):
-    wdf = df[id_cols]
+    wdf = df[id_cols].copy()
     wdf['T_FG%'] = df['T_FGM'] / df['T_FGA']
     wdf['T_PPS'] = (df['T_Score'] - df['T_FTM']) / df['T_FGA']
     wdf['T_eFG%'] = (df['T_FGM'] + .5 * df['T_FGM3']) / df['T_FGA']

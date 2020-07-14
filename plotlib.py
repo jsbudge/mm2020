@@ -80,6 +80,7 @@ class PlotGenerator(object):
 def showStat(df, stat, season, tid):
     tdf = df.loc[np.logical_and(df['Season'] == season,
                                    df['TID'] == tid)].sort_values('DayNum')
-    plt.figure()
+    plt.figure(stat)
+    sns.scatterplot(data=tdf, x='DayNum', y=stat)
     plt.plot(tdf['DayNum'], 
              tdf[stat])

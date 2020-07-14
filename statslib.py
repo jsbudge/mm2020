@@ -175,8 +175,9 @@ Params:
 Returns:
     wdf: DataFrame - augmented frame.
 '''
-def getTourneyStats(tdf, sdf):
+def getTourneyStats(tdf, sdf, files):
     wdf = pd.DataFrame(index=sdf.index)
+    seeds = pd.read_csv(files['MNCAATourneySeeds'])
     wdf['GameRank'] = 0
     for idx, team in tdf.groupby(['Season', 'TID']):
         if team.shape[0] < 6:
@@ -192,6 +193,10 @@ def getTourneyStats(tdf, sdf):
         
         wdf.loc[idx, 'GameRank'] = team.shape[0] + loss
         wdf.loc[idx, 'AdjGameRank'] = team.shape[0] + loss + pts_added
+        sd = seeds.loc[np.logical_and(seeds['Season'] == idx[0],
+                                      seeds['TeamID'] == idx[1]), 'Seed'].values[0][1:]
+        sd = int(sd[:-1]) if len(sd) > 2 else int(sd)
+        wdf.loc[idx, 'Seed'] = sd
     return wdf
 
 '''
@@ -253,7 +258,7 @@ Returns:
     wdf: DataFrame - a frame with the calculated stats.
 '''
 def getInfluenceStats(df):
-    wdf = df[id_cols]
+    wdf = df[id_cols].copy()
     for col in df.columns:
         if 'T_' in col:
             wdf[col[2:] + 'Shift'] = np.nan
@@ -504,11 +509,16 @@ Returns:
 def calcElo(df, K=35, margin=4.5):
     tids = list(set(df['TID'].values))
     elos = dict(zip(list(tids), [1500] * len(tids)))
-    wdf = df[['GameID', 'TID', 'OID']]
+    wdf = df[['GameID', 'TID', 'OID']].copy()
     wdf.loc[:, 'T_Elo'] = 1500
     wdf.loc[:, 'O_Elo'] = 1500
-    
-    for idx, gm in tqdm(df.iterrows()):
+    season = df['Season'].min()
+    for idx, gm in df.iterrows():
+        #First, regression to the mean if the season is new
+        if season != gm['Season']:
+            for key in elos:
+                elos[key] = .25 * elos[key] + .75 * 1500
+            season = gm['Season']
         #Elo calculation stolen from 538
         elo_diff = elos[gm['TID']] - elos[gm['OID']]
         mov = gm['T_Score'] - gm['O_Score']
@@ -517,6 +527,15 @@ def calcElo(df, K=35, margin=4.5):
         final_elo_update = K * ((mov + 3.) ** 0.8) / exp_margin * (1 - elo_shift)
         elos[gm['TID']] += final_elo_update
         elos[gm['OID']] -= final_elo_update
+        if abs(final_elo_update) > 500:
+            print('\n{}: {}, {:.2f} - {}, {:.2f}'.format(gm['GameID'], gm['TID'], gm['T_Score'],
+                                                   gm['OID'], gm['O_Score']))
+            print('{:.2f} , {:.2f}'.format(elos[gm['TID']] - final_elo_update,
+                                           elos[gm['OID']] + final_elo_update))
+            print(elo_diff)
+            print(elo_shift)
+            print(exp_margin)
+            print(final_elo_update)
         wdf.loc[idx, ['T_Elo', 'O_Elo']] = [elos[gm['TID']], elos[gm['OID']]]
     wdf2 = wdf.copy()
     wdf2['TID'], wdf2['OID'] = wdf['OID'], wdf['TID']

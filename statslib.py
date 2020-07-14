@@ -171,12 +171,13 @@ Params:
     tdf: DataFrame - getGames frame of tournament data.
     sdf: DataFrame - getGames frame run through getSeasonalStats function,
                         the averages for the season.
+    files: Dict - getFiles dict.
     
 Returns:
     wdf: DataFrame - augmented frame.
 '''
-def getTourneyStats(tdf, sdf, files):
-    wdf = pd.DataFrame(index=sdf.index)
+def getTourneyStats(tdf, files):
+    wdf = pd.DataFrame(index=tdf.groupby(['Season', 'TID']).mean().index)
     seeds = pd.read_csv(files['MNCAATourneySeeds'])
     wdf['GameRank'] = 0
     for idx, team in tdf.groupby(['Season', 'TID']):
@@ -267,7 +268,7 @@ def getInfluenceStats(df):
                                wdf['Season'] == idx[0])
         for col in team.columns:
             if 'T_' in col:
-                wdf.loc[opp_ids, col[2:] + 'Shift'] = team[col].values - np.mean(team[col])
+                wdf.loc[opp_ids, col[2:] + 'Shift'] = (team[col].values - np.mean(team[col])) / np.std(team[col])
     return wdf
     
 
@@ -513,7 +514,7 @@ def calcElo(df, K=35, margin=4.5):
     wdf.loc[:, 'T_Elo'] = 1500
     wdf.loc[:, 'O_Elo'] = 1500
     season = df['Season'].min()
-    for idx, gm in df.iterrows():
+    for idx, gm in tqdm(df.iterrows()):
         #First, regression to the mean if the season is new
         if season != gm['Season']:
             for key in elos:
@@ -527,15 +528,6 @@ def calcElo(df, K=35, margin=4.5):
         final_elo_update = K * ((mov + 3.) ** 0.8) / exp_margin * (1 - elo_shift)
         elos[gm['TID']] += final_elo_update
         elos[gm['OID']] -= final_elo_update
-        if abs(final_elo_update) > 500:
-            print('\n{}: {}, {:.2f} - {}, {:.2f}'.format(gm['GameID'], gm['TID'], gm['T_Score'],
-                                                   gm['OID'], gm['O_Score']))
-            print('{:.2f} , {:.2f}'.format(elos[gm['TID']] - final_elo_update,
-                                           elos[gm['OID']] + final_elo_update))
-            print(elo_diff)
-            print(elo_shift)
-            print(exp_margin)
-            print(final_elo_update)
         wdf.loc[idx, ['T_Elo', 'O_Elo']] = [elos[gm['TID']], elos[gm['OID']]]
     wdf2 = wdf.copy()
     wdf2['TID'], wdf2['OID'] = wdf['OID'], wdf['TID']

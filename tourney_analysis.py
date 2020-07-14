@@ -27,25 +27,35 @@ import matplotlib.gridspec as gridspec
 from sklearn.linear_model import HuberRegressor, Lars, ElasticNet, Lasso, SGDRegressor, TheilSenRegressor, \
     ARDRegression, LassoLars
 from sklearn.decomposition import KernelPCA
+from sklearn.feature_selection import RFECV
+from sklearn.model_selection import StratifiedKFold
+from sklearn.svm import SVR
 from plotlib import PlotGenerator, showStat
 
+#Gather all of our files
 split_yr = 2013
 files = st.getFiles()
 ts = st.getGames(files['MRegularSeasonDetailedResults']).drop(columns=['NumOT'])
-tt = st.getGames(files['MNCAATourneyDetailedResults']).drop(columns=['NumOT'])
+tt = st.getGames(files['MNCAATourneyDetailedResults'], split=True)
 ts = st.addRanks(ts)
 ts = st.addElos(ts)
 ts = st.joinFrame(ts, st.getStats(ts))
 ts = st.joinFrame(ts, st.getInfluenceStats(ts))
-sts = st.getSeasonalStats(ts, strat='hmean')
-tte = pd.DataFrame(index=tt.groupby(['Season', 'TID']).mean().index)
-ttsts = tte.merge(sts, left_index=True, right_index=True)
-tspecstats = st.getTourneyStats(tt, ttsts, files)
+sts = st.normalizeToSeason(st.getSeasonalStats(ts, strat='elo'))
 
-ttnorm = st.normalizeToSeason(ttsts)
-tsnorm = st.normalizeToSeason(sts)
+#Build the feature vector
+ttw = tt[0][['GameID', 'Season', 'TID']].merge(st.getTeamStats(sts, av=True), on=['Season', 'TID']).set_index(['GameID'])
+ttl = tt[1][['GameID', 'Season', 'TID']].merge(st.getTeamStats(sts, av=True), on=['Season', 'TID']).set_index(['GameID'])
+features = (ttw - ttl).drop(columns=['Season', 'TID'])
+features = features.append(-features, ignore_index=True)
+y = np.concatenate((np.ones((tt[0].shape[0],)),
+                    np.zeros((tt[1].shape[0],))))
 
-ttcorr = ttnorm.merge(tspecstats, left_index=True, right_index=True).corr()
+#Load in all the sklearn stuff
+kpca = KernelPCA(n_components=20)
+clusterdf = pd.DataFrame(data=kpca.fit_transform(features))
+cv = StratifiedKFold(n_splits=5, shuffle=True)
+svm_est = SVR(kernel='linear')
+feat_cull = RFECV(svm_est, cv=cv)
+feat_cull.fit(clusterdf, y)
 
-plt.figure()
-plt.plot(ttcorr['AdjGameRank'])

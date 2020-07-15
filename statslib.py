@@ -197,7 +197,7 @@ def getTourneyStats(tdf, files):
         sd = seeds.loc[np.logical_and(seeds['Season'] == idx[0],
                                       seeds['TeamID'] == idx[1]), 'Seed'].values[0][1:]
         sd = int(sd[:-1]) if len(sd) > 2 else int(sd)
-        wdf.loc[idx, 'Seed'] = sd
+        wdf.loc[idx, 'T_Seed'] = sd
     return wdf
 
 '''
@@ -244,6 +244,8 @@ def getStats(df):
     wdf['O_DefRat'] = wdf['T_OffRat']
     wdf['T_GameScore'] = 40 * wdf['T_eFG%'] + 20 * wdf['T_R%'] + 15 * wdf['T_FT/A'] + 25 - 25 * wdf['T_TO%']
     wdf['O_GameScore'] = 40 * wdf['O_eFG%'] + 20 * wdf['O_R%'] + 15 * wdf['O_FT/A'] + 25 - 25 * wdf['O_TO%']
+    wdf['T_ProdPoss'] = wdf['T_Poss'] - df['T_TO'] - (df['T_FGA'] - df['T_FGM'] + .44 * df['T_FTM'])
+    wdf['O_ProdPoss'] = wdf['O_Poss'] - df['O_TO'] - (df['O_FGA'] - df['O_FGM'] + .44 * df['O_FTM'])
     
     return wdf.fillna(0)
 
@@ -260,15 +262,12 @@ Returns:
 '''
 def getInfluenceStats(df):
     wdf = df[id_cols].copy()
-    for col in df.columns:
-        if 'T_' in col:
-            wdf[col[2:] + 'Shift'] = np.nan
     for idx, team in tqdm(df.groupby(['Season', 'TID'])):
         opp_ids = np.logical_and(wdf['OID'] == idx[1], 
                                wdf['Season'] == idx[0])
         for col in team.columns:
             if 'T_' in col:
-                wdf.loc[opp_ids, col[2:] + 'Shift'] = (team[col].values - np.mean(team[col])) / np.std(team[col])
+                wdf.loc[opp_ids, col + 'Shift'] = (team[col].values - np.mean(team[col])) / np.std(team[col])
     return wdf
     
 
@@ -521,7 +520,7 @@ def calcElo(df, K=35, margin=4.5):
                 elos[key] = .25 * elos[key] + .75 * 1500
             season = gm['Season']
         #Elo calculation stolen from 538
-        elo_diff = elos[gm['TID']] - elos[gm['OID']]
+        elo_diff = elos[gm['TID']] + (gm['GLoc'] * 100) - elos[gm['OID']]
         mov = gm['T_Score'] - gm['O_Score']
         elo_shift = 1. / (10. ** (-elo_diff / 400.) + 1.)
         exp_margin = margin + 0.006 * elo_diff

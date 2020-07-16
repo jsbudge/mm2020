@@ -169,15 +169,16 @@ play.
 
 Params:
     tdf: DataFrame - getGames frame of tournament data.
-    sdf: DataFrame - getGames frame run through getSeasonalStats function,
-                        the averages for the season.
+    df: DataFrame - getGames frame.
     files: Dict - getFiles dict.
     
 Returns:
     wdf: DataFrame - augmented frame.
 '''
-def getTourneyStats(tdf, files):
+def getTourneyStats(tdf, df, files):
     wdf = pd.DataFrame(index=tdf.groupby(['Season', 'TID']).mean().index)
+    df = df.sort_values('GameID')
+    tdf = tdf.sort_values('GameID')
     seeds = pd.read_csv(files['MNCAATourneySeeds'])
     wdf['GameRank'] = 0
     for idx, team in tdf.groupby(['Season', 'TID']):
@@ -198,6 +199,12 @@ def getTourneyStats(tdf, files):
                                       seeds['TeamID'] == idx[1]), 'Seed'].values[0][1:]
         sd = int(sd[:-1]) if len(sd) > 2 else int(sd)
         wdf.loc[idx, 'T_Seed'] = sd
+        wdf.loc[idx, 'T_FinalElo'] = df.loc[np.logical_and(df['Season'] == idx[0],
+                                                           df['TID'] == idx[1]),
+                                            'T_Elo'].values[-1]
+        wdf.loc[idx, 'T_FinalRank'] =df.loc[np.logical_and(df['Season'] == idx[0],
+                                                           df['TID'] == idx[1]),
+                                            'T_Rank'].values[-1]
     return wdf
 
 '''

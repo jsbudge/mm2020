@@ -9,8 +9,9 @@ Stores all of our classes and objects for data manipulation.
 """
 import numpy as np
 import pandas as pd
-from statslib import loadTeamNames
+import statslib as st
 from sklearn.metrics import log_loss
+from sklearn.preprocessing import StandardScaler
 
 class Bracket(object):
     def __init__(self, season, files):
@@ -56,7 +57,7 @@ class Bracket(object):
         self.seeds = seeds
         self.structure = structure
         self.truth = truth
-        self.tnames = loadTeamNames(files)
+        self.tnames = st.loadTeamNames(files)
         self.isBuilt = False
         
     def __str__(self):
@@ -67,7 +68,7 @@ class Bracket(object):
         if self.isBuilt:
             print_struct = self.structure.loc[self.structure['GameRound'] > 0].sort_values('Slot')
             ret = 'Model evaluated for {}. Score: {}, Loss: {:.2f}, Acc: {:.2f}%\n'.format(self.season,
-                                                                                           self.score,
+                                                                                           self.espn_score,
                                                                                            self.loss,
                                                                                            self.accuracy * 100)
         else:
@@ -108,14 +109,11 @@ class Bracket(object):
                         for the teams that are playing.
         classifier: sklearn model with predict() and predict_proba() function call.
     """
-    def run(self, df, classifier, transformer=None):
+    def run(self, classifier, fc):
         for idx in range(self.structure.shape[0]):
             row = self.structure.iloc[idx]
-            if transformer is not None:
-                vector = transformer.transform((df.loc[row['StrongSeed']] - \
-                                        df.loc[row['WeakSeed']]).values.reshape(1, -1))
-            else:
-                vector = (df.loc[row['StrongSeed']] - df.loc[row['WeakSeed']]).values.reshape(1, -1)
+            vector = (fc.get(self.season, row['StrongSeed']) -\
+                      fc.get(self.season, row['WeakSeed'])).values.reshape(1, -1)
             gm_res = classifier.predict(vector)
             prob = classifier.predict_proba(vector)
             winner = row['StrongSeed'] if gm_res else row['WeakSeed']
@@ -130,10 +128,21 @@ class Bracket(object):
         success = (self.truth.loc[self.truth['GameRound'] > 0, 'Winner'] - \
                    self.structure.loc[self.structure['GameRound'] > 0, 'Winner']) == 0
         score = sum(2**(self.truth.loc[self.truth['GameRound'] > 0, 'GameRound'].values-1) * 10 * success)
-        self.score = score
+        self.espn_score = score
+        self.flat_score = sum(success)
         self.loss = log_loss(success, self.structure.loc[self.structure['GameRound'] > 0, 'StrongSeed%'].values)
         self.accuracy = sum(success) / self.structure.loc[self.structure['GameRound'] > 0].shape[0]
     
+    '''
+    printTree
+    Prints a pretty tournament tree to file with all the data you'd ever want.
+    
+    Params:
+        fname: String - path to file
+        
+    Returns:
+        True if successful
+    '''
     def printTree(self, fname):
         try:
             with open(fname, 'w') as f:
@@ -142,6 +151,53 @@ class Bracket(object):
         except:
             return False
         
-            
-                
+class FeatureCreator(object):
+    def __init__(self, files, strat='rank', transform=None, scaling=None):
+        self.files = files
+        self.tnames = st.loadTeamNames(files)
+        self.scaler = scaling
+        self.average_strat = strat
+        self.transform = None
+        self.init_sts = None
+        self.reload()
         
+    def reload(self, rc=False):
+        if self.init_sts is None:
+            ts = st.getGames(self.files['MRegularSeasonDetailedResults']).drop(columns=['NumOT'])
+            ts = st.addRanks(ts)
+            ts = st.addElos(ts)
+            ts = st.joinFrame(ts, st.getStats(ts))
+            ts = st.joinFrame(ts, st.getInfluenceStats(ts, recalc=rc))
+            ttu = st.getGames(self.files['MNCAATourneyDetailedResults'])
+            ttstats = st.getTourneyStats(ttu, ts, self.files)
+            sts = st.getSeasonalStats(ts, strat=self.average_strat, recalc=rc)
+            sts = sts.merge(ttstats[['T_FinalRank', 'T_FinalElo', 'T_Seed']], left_index=True, right_index=True)
+            self.init_sts = sts.copy()
+        else:
+            sts = self.init_sts.copy()
+        sts = st.normalizeToSeason(sts, scaler=self.scaler)
+        if self.transform is not None:
+            sts = pd.DataFrame(index=sts.index, data=self.transform.transform(sts))
+        self.avdf = sts
+        
+    def setAveragingStrategy(self, strat):
+        self.average_strat = strat
+        self.init_sts = None
+        self.reload()
+        
+    def setTransform(self, transform):
+        self.transform = transform
+        self.reload()
+        
+    def get(self, season, tid):
+        return self.avdf.loc[(season, tid), :]
+    
+    def getIndex(self, idx):
+        return self.avdf.loc[idx]
+    
+    def splitGames(self, gameframe, perc=.25):
+        ttw = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'TID']]))
+        ttl = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'OID']]))
+        X = pd.DataFrame(ttw.values - ttl.values)
+        y = (gameframe['T_Score'] - gameframe['O_Score'] > 0) - 0
+        return X, y

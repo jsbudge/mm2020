@@ -11,6 +11,7 @@ from tqdm import tqdm
 from scipy.linalg import solve
 from scipy.stats import hmean
 import statsmodels.api as sm
+from sklearn.preprocessing import RobustScaler
 
 stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
               'OR', 'DR', 'Ast', 'TO', 'Stl', 'Blk', 'PF']
@@ -122,22 +123,30 @@ deviation of one.
 
 Params:
     df: DataFrame - frame to normalize.
+    scaler: sklearn - one of the Scaler classes with a fit_transform method.
+            None - uses mean and variance instead.
     
 Returns:
     df: DataFrame - normalized frame.
 '''
-def normalizeToSeason(df):
+def normalizeToSeason(df, scaler=None):
     wdf = df.copy()
     if 'Season' in df.columns:
         for season, sdf in df.groupby(['Season']):
-            for col in sdf.columns:
-                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
-                    wdf.loc[df['Season'] == season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
+            if scaler is not None:
+                wdf.loc[df['Season'] == season] = scaler.fit_transform(sdf)
+            else:
+                for col in sdf.columns:
+                    if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
+                        wdf.loc[df['Season'] == season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
     elif 'Season' in df.index.names:
         for season, sdf in df.groupby('Season'):
-            for col in sdf.columns:
-                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
-                    wdf.loc[season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
+            if scaler is not None:
+                wdf.loc[season] = scaler.fit_transform(sdf)
+            else:
+                for col in sdf.columns:
+                    if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
+                        wdf.loc[season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
     return wdf
 
 '''
@@ -263,11 +272,15 @@ changes a team's overall average.
 
 Params:
     df: DataFrame - getGames frame.
+    save: bool - determines whether to save a CSV of the result.
+    recalc: bool - determines whether to calculate results or just use the CSV.
     
 Returns:
     wdf: DataFrame - a frame with the calculated stats.
 '''
-def getInfluenceStats(df):
+def getInfluenceStats(df, save=True, recalc=False):
+    if not recalc:
+        return pd.read_csv('influence_stats.csv')
     wdf = df[id_cols].copy()
     for idx, team in tqdm(df.groupby(['Season', 'TID'])):
         opp_ids = np.logical_and(wdf['OID'] == idx[1], 
@@ -275,6 +288,8 @@ def getInfluenceStats(df):
         for col in team.columns:
             if 'T_' in col:
                 wdf.loc[opp_ids, col + 'Shift'] = (team[col].values - np.mean(team[col])) / np.std(team[col])
+    if save:
+        wdf.to_csv('influence_stats.csv')
     return wdf
     
 
@@ -290,13 +305,17 @@ Params:
         'elo': weight by opponent's Elo
         'hmean': Use harmonic mean
         'mest': Use M-Estimator with Andrew's Wave as the weighting function
+    save: bool - determines whether to save a CSV of the result.
+    recalc: bool - determines whether to calculate results or just use the CSV.
         
     
 Returns:
     wdf: DataFrame - frame with a single entry per team per season, with the means
                         and added stats for that team.
 '''
-def getSeasonalStats(df, strat='rank'):
+def getSeasonalStats(df, strat='rank', save=True, recalc=False):
+    if not recalc:
+        return pd.read_csv('seasonal_stats.csv').set_index(['Season', 'TID'])
     tcols = df.columns.drop(['Season', 'TID', 'GameID', 'GLoc', 'DayNum', 'OID'])
     wdf = df.groupby(['Season', 'TID']).mean().drop(columns=['GameID', 'GLoc', 'DayNum', 'OID'])
     wdf['T_Win%'] = 0
@@ -322,6 +341,8 @@ def getSeasonalStats(df, strat='rank'):
                                                            sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91),
                                                            np.average(grp['O_Rank'], weights=grp['O_Elo']),
                                                            grp.loc[grp['DayNum'] == grp['DayNum'].max(), 'T_Elo']]
+    if save:
+        wdf.to_csv('seasonal_stats.csv')
     return wdf
 
 '''

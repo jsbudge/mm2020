@@ -1,0 +1,128 @@
+Model evaluated for 2019. Score: 790, Loss: 0.54, Acc: 66.67%
+RND64			RND32			SWT16			E8			FF			CH
+Duke: 0.98, 0.02 :N Dakota St
+(Duke) Duke
+			Duke: 0.86, 0.14 :VCU
+			(Duke) Duke
+VCU: 0.53, 0.47 :UCF
+(UCF) VCU
+						Duke: 0.85, 0.15 :Virginia Tech
+						(Duke) Duke
+Mississippi St: 0.88, 0.12 :Liberty
+(Liberty) Mississippi St
+			Virginia Tech: 0.55, 0.45 :Mississippi St
+			(Virginia Tech) Virginia Tech
+Virginia Tech: 0.82, 0.18 :St Louis
+(Virginia Tech) Virginia Tech
+									Duke: 0.49, 0.51 :Michigan St
+									(Michigan St) Michigan St
+Maryland: 0.49, 0.51 :Temple
+(Maryland) Temple
+			LSU: 0.62, 0.38 :Temple
+			(LSU) LSU
+LSU: 0.89, 0.11 :Yale
+(LSU) LSU
+						Michigan St: 0.70, 0.30 :LSU
+						(Michigan St) Michigan St
+Louisville: 0.54, 0.46 :Minnesota
+(Minnesota) Louisville
+			Michigan St: 0.65, 0.35 :Louisville
+			(Michigan St) Michigan St
+Michigan St: 0.99, 0.01 :Bradley
+(Michigan St) Michigan St
+												Michigan St: 0.46, 0.54 :Gonzaga
+												(Texas Tech) Gonzaga
+Gonzaga: 0.99, 0.01 :F Dickinson
+(Gonzaga) Gonzaga
+			Gonzaga: 0.84, 0.16 :Syracuse
+			(Gonzaga) Gonzaga
+Syracuse: 0.57, 0.43 :Baylor
+(Baylor) Syracuse
+						Gonzaga: 0.75, 0.25 :Florida St
+						(Gonzaga) Gonzaga
+Marquette: 0.57, 0.43 :Murray St
+(Murray St) Marquette
+			Florida St: 0.62, 0.38 :Marquette
+			(Florida St) Florida St
+Florida St: 0.94, 0.06 :Vermont
+(Florida St) Florida St
+									Gonzaga: 0.66, 0.34 :Michigan
+									(Texas Tech) Gonzaga
+Buffalo: 0.75, 0.25 :St John's
+(Buffalo) Buffalo
+			Texas Tech: 0.57, 0.43 :Buffalo
+			(Texas Tech) Texas Tech
+Texas Tech: 0.89, 0.11 :N Kentucky
+(Texas Tech) Texas Tech
+						Michigan: 0.51, 0.49 :Texas Tech
+						(Texas Tech) Michigan
+Nevada: 0.62, 0.38 :Florida
+(Florida) Nevada
+			Michigan: 0.59, 0.41 :Nevada
+			(Michigan) Michigan
+Michigan: 0.93, 0.07 :Montana
+(Michigan) Michigan
+															Gonzaga: 0.53, 0.47 :North Carolina
+															(Virginia) Gonzaga
+North Carolina: 0.96, 0.04 :Iona
+(North Carolina) North Carolina
+			North Carolina: 0.88, 0.12 :Washington
+			(North Carolina) North Carolina
+Utah St: 0.48, 0.52 :Washington
+(Washington) Washington
+						North Carolina: 0.73, 0.27 :Auburn
+						(Auburn) North Carolina
+Auburn: 0.70, 0.30 :New Mexico St
+(Auburn) Auburn
+			Kansas: 0.50, 0.50 :Auburn
+			(Auburn) Auburn
+Kansas: 0.89, 0.11 :Northeastern
+(Kansas) Kansas
+									North Carolina: 0.63, 0.37 :Kentucky
+									(Auburn) North Carolina
+Iowa St: 0.63, 0.37 :Ohio St
+(Ohio St) Iowa St
+			Houston: 0.61, 0.39 :Iowa St
+			(Houston) Houston
+Houston: 0.86, 0.14 :Georgia St
+(Houston) Houston
+						Kentucky: 0.51, 0.49 :Houston
+						(Kentucky) Kentucky
+Wofford: 0.53, 0.47 :Seton Hall
+(Wofford) Wofford
+			Kentucky: 0.60, 0.40 :Wofford
+			(Kentucky) Kentucky
+Kentucky: 0.92, 0.08 :Abilene Chr
+(Kentucky) Kentucky
+												North Carolina: 0.55, 0.45 :Tennessee
+												(Virginia) North Carolina
+Virginia: 0.86, 0.14 :Gardner Webb
+(Virginia) Virginia
+			Virginia: 0.84, 0.16 :Oklahoma
+			(Virginia) Virginia
+Mississippi: 0.32, 0.68 :Oklahoma
+(Oklahoma) Oklahoma
+						Virginia: 0.76, 0.24 :Wisconsin
+						(Virginia) Virginia
+Wisconsin: 0.69, 0.31 :Oregon
+(Oregon) Wisconsin
+			Kansas St: 0.47, 0.53 :Wisconsin
+			(Oregon) Wisconsin
+Kansas St: 0.76, 0.24 :UC Irvine
+(UC Irvine) Kansas St
+									Virginia: 0.44, 0.56 :Tennessee
+									(Virginia) Tennessee
+Villanova: 0.54, 0.46 :St Mary's CA
+(Villanova) Villanova
+			Purdue: 0.64, 0.36 :Villanova
+			(Purdue) Purdue
+Purdue: 0.86, 0.14 :Old Dominion
+(Purdue) Purdue
+						Tennessee: 0.56, 0.44 :Purdue
+						(Purdue) Tennessee
+Cincinnati: 0.67, 0.33 :Iowa
+(Iowa) Cincinnati
+			Tennessee: 0.62, 0.38 :Cincinnati
+			(Tennessee) Tennessee
+Tennessee: 0.95, 0.05 :Colgate
+(Tennessee) Tennessee

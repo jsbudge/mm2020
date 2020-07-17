@@ -13,10 +13,9 @@ from statslib import loadTeamNames
 from sklearn.metrics import log_loss
 
 class Bracket(object):
-    def __init__(self, season, files, ):
+    def __init__(self, season, files):
         seeds = pd.read_csv(files['MNCAATourneySeeds'])
         seeds = seeds.loc[seeds['Season'] == season]
-        self.seeds = seeds
         slots = pd.read_csv(files['MNCAATourneySlots'])
         slots = slots.loc[slots['Season'] == season]
         seedslots = pd.read_csv(files['MNCAATourneySeedRoundSlots']).rename(columns={'GameSlot': 'Slot'})
@@ -38,7 +37,6 @@ class Bracket(object):
                     structure.loc[idx, 'StrongSeed'] = \
                     seeds.loc[seeds['Seed'] == row['StrongSeed'], 'TeamID'].values[0]
         structure['Winner'] = 0; structure['StrongSeed%'] = 0; structure['WeakSeed%'] = 0
-        self.structure = structure
         truth = structure.copy()
         actual_games = pd.read_csv(files['MNCAATourneyCompactResults'])
         actual_games = actual_games.loc[actual_games['Season'] == season]
@@ -54,6 +52,9 @@ class Bracket(object):
                 truth.loc[truth['StrongSeed'] == row['Slot'], 'StrongSeed'] = winner
             else:
                 truth.loc[truth['WeakSeed'] == row['Slot'], 'WeakSeed'] = winner
+        self.season = season
+        self.seeds = seeds
+        self.structure = structure
         self.truth = truth
         self.tnames = loadTeamNames(files)
         self.isBuilt = False
@@ -65,9 +66,10 @@ class Bracket(object):
                [1, 4, 3, 2], [1, 2], [1]]
         if self.isBuilt:
             print_struct = self.structure.loc[self.structure['GameRound'] > 0].sort_values('Slot')
-            ret = 'Model evaluated. Score: {}, Loss: {:.2f}, Acc: {:.2f}%\n'.format(self.score,
-                                                                                   self.loss,
-                                                                                   self.accuracy * 100)
+            ret = 'Model evaluated for {}. Score: {}, Loss: {:.2f}, Acc: {:.2f}%\n'.format(self.season,
+                                                                                           self.score,
+                                                                                           self.loss,
+                                                                                           self.accuracy * 100)
         else:
             print_struct = self.truth.loc[self.truth['GameRound'] > 0].sort_values('Slot')
             ret = '\nNo model evaluated.\n'

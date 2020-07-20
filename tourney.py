@@ -12,6 +12,7 @@ import pandas as pd
 import statslib as st
 from sklearn.metrics import log_loss
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import StratifiedKFold
 
 class Bracket(object):
     def __init__(self, season, files):
@@ -180,13 +181,17 @@ class FeatureCreator(object):
             sts = pd.DataFrame(index=sts.index, data=self.transform.transform(sts))
         self.avdf = sts
         
-    def setAveragingStrategy(self, strat):
+    def reAverage(self, strat):
         self.average_strat = strat
         self.init_sts = None
         self.reload()
         
-    def setTransform(self, transform):
+    def reTransform(self, transform):
         self.transform = transform
+        self.reload()
+        
+    def reScale(self, scaling):
+        self.scaler = scaling
         self.reload()
         
     def get(self, season, tid):
@@ -195,9 +200,16 @@ class FeatureCreator(object):
     def getIndex(self, idx):
         return self.avdf.loc[idx]
     
-    def splitGames(self, gameframe, perc=.25):
+    def splitGames(self, gameframe, split=None):
         ttw = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'TID']]))
         ttl = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'OID']]))
         X = pd.DataFrame(ttw.values - ttl.values)
-        y = (gameframe['T_Score'] - gameframe['O_Score'] > 0) - 0
-        return X, y
+        y = (gameframe['T_Score'] - gameframe['O_Score'] > 0).values - 0
+        if split is None:
+            return X, y
+        else:
+            if type(split) == int:
+                s = ttw.index.get_level_values(0) == split
+                return X.loc[np.logical_not(s)], y[np.logical_not(s)], X.loc[s], y[s]
+            train, test = next(split.split(X, y))
+            return X.iloc[train], y[train], X.iloc[test], y[test]

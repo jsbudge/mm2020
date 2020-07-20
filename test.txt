@@ -1,128 +1,128 @@
-Model evaluated for 2019. Score: 720, Loss: 0.56, Acc: 61.90%
+Model evaluated for 2019. Score: 1300, Loss: 0.54, Acc: 69.84%
 RND64			RND32			SWT16			E8			FF			CH
-Duke: 0.94, 0.06 :N Dakota St
+Duke: 0.96, 0.04 :NC Central
 (Duke) Duke
-			Duke: 0.84, 0.16 :VCU
+			Duke: 0.88, 0.12 :VCU
 			(Duke) Duke
-VCU: 0.62, 0.38 :UCF
+VCU: 0.58, 0.42 :UCF
 (UCF) VCU
-						Duke: 0.83, 0.17 :Mississippi St
+						Duke: 0.89, 0.11 :Virginia Tech
 						(Duke) Duke
-Mississippi St: 0.78, 0.22 :Liberty
+Mississippi St: 0.79, 0.21 :Liberty
 (Liberty) Mississippi St
-			Virginia Tech: 0.50, 0.50 :Mississippi St
-			(Virginia Tech) Mississippi St
-Virginia Tech: 0.70, 0.30 :St Louis
+			Virginia Tech: 0.59, 0.41 :Mississippi St
+			(Virginia Tech) Virginia Tech
+Virginia Tech: 0.76, 0.24 :St Louis
 (Virginia Tech) Virginia Tech
 									Duke: 0.49, 0.51 :Michigan St
 									(Michigan St) Michigan St
-Maryland: 0.48, 0.52 :Temple
-(Maryland) Temple
-			LSU: 0.61, 0.39 :Temple
+Maryland: 0.56, 0.44 :Temple
+(Maryland) Maryland
+			LSU: 0.53, 0.47 :Maryland
 			(LSU) LSU
-LSU: 0.78, 0.22 :Yale
+LSU: 0.86, 0.14 :Yale
 (LSU) LSU
-						Michigan St: 0.76, 0.24 :LSU
+						Michigan St: 0.72, 0.28 :LSU
 						(Michigan St) Michigan St
-Louisville: 0.57, 0.43 :Minnesota
+Louisville: 0.62, 0.38 :Minnesota
 (Minnesota) Louisville
-			Michigan St: 0.68, 0.32 :Louisville
+			Michigan St: 0.74, 0.26 :Louisville
 			(Michigan St) Michigan St
-Michigan St: 0.84, 0.16 :Bradley
+Michigan St: 0.94, 0.06 :Bradley
 (Michigan St) Michigan St
-												Michigan St: 0.43, 0.57 :Gonzaga
+												Michigan St: 0.47, 0.53 :Gonzaga
 												(Texas Tech) Gonzaga
-Gonzaga: 0.91, 0.09 :F Dickinson
+Gonzaga: 0.98, 0.02 :F Dickinson
 (Gonzaga) Gonzaga
-			Gonzaga: 0.70, 0.30 :Syracuse
+			Gonzaga: 0.81, 0.19 :Syracuse
 			(Gonzaga) Gonzaga
-Syracuse: 0.58, 0.42 :Baylor
+Syracuse: 0.54, 0.46 :Baylor
 (Baylor) Syracuse
-						Gonzaga: 0.66, 0.34 :Florida St
+						Gonzaga: 0.72, 0.28 :Florida St
 						(Gonzaga) Gonzaga
-Marquette: 0.59, 0.41 :Murray St
+Marquette: 0.58, 0.42 :Murray St
 (Murray St) Marquette
-			Florida St: 0.68, 0.32 :Marquette
+			Florida St: 0.66, 0.34 :Marquette
 			(Florida St) Florida St
-Florida St: 0.85, 0.15 :Vermont
+Florida St: 0.87, 0.13 :Vermont
 (Florida St) Florida St
-									Gonzaga: 0.67, 0.33 :Michigan
+									Gonzaga: 0.62, 0.38 :Michigan
 									(Texas Tech) Gonzaga
-Buffalo: 0.71, 0.29 :Arizona St
+Buffalo: 0.75, 0.25 :St John's
 (Buffalo) Buffalo
-			Texas Tech: 0.68, 0.32 :Buffalo
+			Texas Tech: 0.58, 0.42 :Buffalo
 			(Texas Tech) Texas Tech
-Texas Tech: 0.83, 0.17 :N Kentucky
+Texas Tech: 0.90, 0.10 :N Kentucky
 (Texas Tech) Texas Tech
-						Michigan: 0.55, 0.45 :Texas Tech
+						Michigan: 0.54, 0.46 :Texas Tech
 						(Texas Tech) Michigan
-Nevada: 0.52, 0.48 :Florida
+Nevada: 0.67, 0.33 :Florida
 (Florida) Nevada
-			Michigan: 0.65, 0.35 :Nevada
+			Michigan: 0.72, 0.28 :Nevada
 			(Michigan) Michigan
-Michigan: 0.81, 0.19 :Montana
+Michigan: 0.86, 0.14 :Montana
 (Michigan) Michigan
-															Gonzaga: 0.48, 0.52 :North Carolina
-															(Virginia) North Carolina
-North Carolina: 0.88, 0.12 :Iona
+															Gonzaga: 0.48, 0.52 :Virginia
+															(Virginia) Virginia
+North Carolina: 0.99, 0.01 :Iona
 (North Carolina) North Carolina
-			North Carolina: 0.59, 0.41 :Washington
+			North Carolina: 0.72, 0.28 :Washington
 			(North Carolina) North Carolina
-Utah St: 0.44, 0.56 :Washington
+Utah St: 0.42, 0.58 :Washington
 (Washington) Washington
-						North Carolina: 0.68, 0.32 :Auburn
+						North Carolina: 0.67, 0.33 :Kansas
 						(Auburn) North Carolina
-Auburn: 0.60, 0.40 :New Mexico St
+Auburn: 0.57, 0.43 :New Mexico St
 (Auburn) Auburn
-			Kansas: 0.45, 0.55 :Auburn
-			(Auburn) Auburn
-Kansas: 0.75, 0.25 :Northeastern
+			Kansas: 0.51, 0.49 :Auburn
+			(Auburn) Kansas
+Kansas: 0.85, 0.15 :Northeastern
 (Kansas) Kansas
-									North Carolina: 0.67, 0.33 :Houston
+									North Carolina: 0.62, 0.38 :Houston
 									(Auburn) North Carolina
-Iowa St: 0.72, 0.28 :Ohio St
+Iowa St: 0.63, 0.37 :Ohio St
 (Ohio St) Iowa St
-			Houston: 0.53, 0.47 :Iowa St
+			Houston: 0.60, 0.40 :Iowa St
 			(Houston) Houston
-Houston: 0.89, 0.11 :Georgia St
+Houston: 0.93, 0.07 :Georgia St
 (Houston) Houston
-						Kentucky: 0.42, 0.58 :Houston
+						Kentucky: 0.41, 0.59 :Houston
 						(Kentucky) Houston
-Wofford: 0.49, 0.51 :Seton Hall
-(Wofford) Seton Hall
-			Kentucky: 0.63, 0.37 :Seton Hall
+Wofford: 0.59, 0.41 :Seton Hall
+(Wofford) Wofford
+			Kentucky: 0.63, 0.37 :Wofford
 			(Kentucky) Kentucky
-Kentucky: 0.89, 0.11 :Abilene Chr
+Kentucky: 0.90, 0.10 :Abilene Chr
 (Kentucky) Kentucky
-												North Carolina: 0.59, 0.41 :Tennessee
-												(Virginia) North Carolina
-Virginia: 0.83, 0.17 :Gardner Webb
+												North Carolina: 0.49, 0.51 :Virginia
+												(Virginia) Virginia
+Virginia: 0.95, 0.05 :Gardner Webb
 (Virginia) Virginia
-			Virginia: 0.78, 0.22 :Oklahoma
+			Virginia: 0.85, 0.15 :Oklahoma
 			(Virginia) Virginia
-Mississippi: 0.37, 0.63 :Oklahoma
+Mississippi: 0.38, 0.62 :Oklahoma
 (Oklahoma) Oklahoma
-						Virginia: 0.62, 0.38 :Wisconsin
+						Virginia: 0.82, 0.18 :Kansas St
 						(Virginia) Virginia
-Wisconsin: 0.62, 0.38 :Oregon
+Wisconsin: 0.82, 0.18 :Oregon
 (Oregon) Wisconsin
-			Kansas St: 0.47, 0.53 :Wisconsin
-			(Oregon) Wisconsin
-Kansas St: 0.65, 0.35 :UC Irvine
+			Kansas St: 0.51, 0.49 :Wisconsin
+			(Oregon) Kansas St
+Kansas St: 0.73, 0.27 :UC Irvine
 (UC Irvine) Kansas St
-									Virginia: 0.44, 0.56 :Tennessee
-									(Virginia) Tennessee
-Villanova: 0.56, 0.44 :St Mary's CA
+									Virginia: 0.53, 0.47 :Tennessee
+									(Virginia) Virginia
+Villanova: 0.59, 0.41 :St Mary's CA
 (Villanova) Villanova
-			Purdue: 0.71, 0.29 :Villanova
+			Purdue: 0.65, 0.35 :Villanova
 			(Purdue) Purdue
-Purdue: 0.69, 0.31 :Old Dominion
+Purdue: 0.73, 0.27 :Old Dominion
 (Purdue) Purdue
-						Tennessee: 0.57, 0.43 :Purdue
+						Tennessee: 0.62, 0.38 :Purdue
 						(Purdue) Tennessee
 Cincinnati: 0.75, 0.25 :Iowa
 (Iowa) Cincinnati
-			Tennessee: 0.69, 0.31 :Cincinnati
+			Tennessee: 0.64, 0.36 :Cincinnati
 			(Tennessee) Tennessee
-Tennessee: 0.91, 0.09 :Colgate
+Tennessee: 0.94, 0.06 :Colgate
 (Tennessee) Tennessee

@@ -21,27 +21,25 @@ import statslib as st
 import seaborn as sns
 import matplotlib.pyplot as plt
 from plotlib import PlotGenerator, showStat
+from tourney import FeatureCreator
+from sklearn.preprocessing import OneHotEncoder, RobustScaler, StandardScaler, PowerTransformer, QuantileTransformer, \
+    PolynomialFeatures
+from sklearn.cluster import AffinityPropagation, DBSCAN, KMeans, MeanShift, SpectralClustering, FeatureAgglomeration
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.decomposition import KernelPCA, FastICA, LatentDirichletAllocation, DictionaryLearning
+from sklearn.feature_selection import RFECV, SelectKBest, mutual_info_classif, f_classif, \
+    SelectPercentile, VarianceThreshold
 
 files = st.getFiles()
-ts = st.getGames(files['MRegularSeasonDetailedResults'])
-tt = st.getGames(files['MNCAATourneyDetailedResults'])
-ts = st.addRanks(ts)
-ts = st.addElos(ts)
-ts = st.addStats(ts)
-ts2019 = ts.loc[ts['Season'] == 2019]
-tt2019 = tt.loc[tt['Season'] == 2019].groupby(['Season', 'T_TeamID']).mean()
-tte = pd.DataFrame(index=tt2019.index)
-sts = st.getSeasonalStats(ts2019)
-wdf = st.getTeamStats(sts, True)
-wdf = wdf.drop(columns=['T_Rank', 'T_Elo', 'T_SoS', 'T_Win%', 'T_PythWin%'])
-stse = tte.merge(wdf, left_index=True, right_index=True)
-plotter = PlotGenerator(tt, stse, files, season=2019)
+fc = FeatureCreator(files, scaling=RobustScaler())
+# Xtrans, ytrans = fc.splitGames(st.getGames(files['MNCAATourneyDetailedResults']))
+# transform = FeatureUnion([('kpca_lin', KernelPCA(n_components=20, kernel='linear')),
+#                           ('kpca_rbf', KernelPCA(n_components=20, kernel='rbf')),
+#                           ('scores', Pipeline([('poly', PolynomialFeatures(degree=2)),
+#                                                ('variance', VarianceThreshold()),
+#                                                ('minfo', SelectPercentile(score_func=mutual_info_classif, percentile=10)),
+#                                                ('fclass', SelectPercentile(score_func=f_classif, percentile=10))]))])
+# fc.reTransform(transform.fit(Xtrans, ytrans))
 
-kpca = KernelPCA(n_components=5)
-pcadf = pd.DataFrame(data=kpca.fit_transform(wdf), index=wdf.index)
-aprop = AffinityPropagation(damping=.6)
-dbs = DBSCAN(eps=1)
-test = aprop.fit(pcadf)
-
-for clust in test.cluster_centers_indices_:
-    plotter.showTeamOverall(sts.index.get_level_values(1)[clust])
+#%%
+test = FeatureAgglomeration(n_clusters=None, compute_full_tree=True, linkage='average', distance_threshold=10).fit(fc.avdf)

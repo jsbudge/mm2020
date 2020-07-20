@@ -26,7 +26,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from sklearn.linear_model import HuberRegressor, Lars, ElasticNet, Lasso, SGDRegressor, TheilSenRegressor, \
     ARDRegression, LassoLars
-from sklearn.decomposition import KernelPCA, FastICA
+from sklearn.decomposition import KernelPCA, FastICA, LatentDirichletAllocation, DictionaryLearning, \
+    TruncatedSVD
 from sklearn.feature_selection import RFECV, SelectKBest, mutual_info_classif, f_classif, \
     SelectPercentile, VarianceThreshold
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
@@ -34,8 +35,9 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.svm import SVR
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.neural_network import MLPClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.manifold import Isomap
+from sklearn.covariance import EmpiricalCovariance, OAS
 from sklearn.metrics import log_loss, make_scorer
 from sklearn.gaussian_process import GaussianProcessClassifier, kernels
 from sklearn.preprocessing import OneHotEncoder, RobustScaler, StandardScaler, PowerTransformer, QuantileTransformer, \
@@ -47,34 +49,32 @@ from tourney import Bracket, FeatureCreator
 #Gather all of our files
 # split_yr = 2018
 files = st.getFiles()
-cv = StratifiedKFold(n_splits=3, shuffle=True)
+cv = StratifiedKFold(n_splits=5, shuffle=True)
 tt = st.getGames(files['MNCAATourneyDetailedResults'], split=True)
 ttu = st.getGames(files['MNCAATourneyDetailedResults'])
 
 print('Loading features...')
-fc = FeatureCreator(files, scaling=RobustScaler())
+fc = FeatureCreator(files, scaling=PowerTransformer())
 Xtrans, ytrans = fc.splitGames(ttu)
 
 #%%
 #Feature selection, to remove redundancies, etc.
-minfo_select = SelectPercentile(score_func=mutual_info_classif, percentile=10)
-fclass_select = SelectPercentile(score_func=f_classif, percentile=25)
-poly_feats = PolynomialFeatures(degree=2)
-kpca_lin = KernelPCA(n_components=20, kernel='linear')
-kpca_rbf = KernelPCA(n_components=20, kernel='rbf')
-transform = FeatureUnion([('kpca_lin', kpca_lin),
-                          ('kpca_rbf', kpca_rbf),
-                          ('scores', Pipeline([('poly', poly_feats),
-                                               ('minfo', minfo_select),
-                                               ('fclass', fclass_select)]))])
+transform = Pipeline([('features', FeatureUnion([('kpca_lin', KernelPCA(n_components=15, kernel='linear')),
+                          ('kpca_rbf', KernelPCA(n_components=15, kernel='rbf')),
+                          ('svd', Isomap(n_neighbors=15, n_components=5)),
+                          ('scores', Pipeline([('poly', PolynomialFeatures(degree=2)),
+                                               ('variance', VarianceThreshold()),
+                                               ('minfo', SelectPercentile(score_func=mutual_info_classif, percentile=10)),
+                                               ('fclass', SelectPercentile(score_func=f_classif, percentile=10))]))])),
+                      ('trim', SelectPercentile(score_func=mutual_info_classif, percentile=80))])
 
 print('Fitting features...')
 nfeats = pd.DataFrame(transform.fit_transform(Xtrans, ytrans))
 fc.reTransform(transform)
-Xt, yt, Xs, ys = fc.splitGames(ttu, split=2019)
+Xt, yt, Xs, ys = fc.splitGames(ttu, split=2017)
 
 #nn = MLPClassifier()
-classifier = RandomForestClassifier()
+classifier = RandomForestClassifier(n_estimators=1500)
 ys_ll = OneHotEncoder(sparse=False).fit_transform(ys.reshape(-1, 1))
 
 #rf_pipe = Pipeline([('s1', transform), ('s2', rforest)])

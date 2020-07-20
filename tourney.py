@@ -173,6 +173,7 @@ class FeatureCreator(object):
             ttstats = st.getTourneyStats(ttu, ts, self.files)
             sts = st.getSeasonalStats(ts, strat=self.average_strat, recalc=rc)
             sts = sts.merge(ttstats[['T_FinalRank', 'T_FinalElo', 'T_Seed']], left_index=True, right_index=True)
+            self.games = ttstats[['GameRank', 'AdjGameRank']]
             self.init_sts = sts.copy()
         else:
             sts = self.init_sts.copy()
@@ -188,6 +189,10 @@ class FeatureCreator(object):
         
     def reTransform(self, transform):
         self.transform = transform
+        self.reload()
+        
+    def fit_transform(self, transform):
+        self.transform = transform.fit(self.init_sts)
         self.reload()
         
     def reScale(self, scaling):

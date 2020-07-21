@@ -42,54 +42,49 @@ from sklearn.metrics import log_loss, make_scorer
 from sklearn.gaussian_process import GaussianProcessClassifier, kernels
 from sklearn.preprocessing import OneHotEncoder, RobustScaler, StandardScaler, PowerTransformer, QuantileTransformer, \
     PolynomialFeatures
-from plotlib import PlotGenerator, showStat
+from plotlib import PlotGenerator, showStat, showCorrs
 from scipy.optimize import minimize
 from tourney import Bracket, FeatureCreator
 
 #Gather all of our files
 # split_yr = 2018
 files = st.getFiles()
-cv = StratifiedKFold(n_splits=5, shuffle=True)
-tt = st.getGames(files['MNCAATourneyDetailedResults'], split=True)
+cv = StratifiedKFold(n_splits=3, shuffle=True)
 ttu = st.getGames(files['MNCAATourneyDetailedResults'])
 
 print('Loading features...')
-fc = FeatureCreator(files, scaling=PowerTransformer())
-Xtrans, ytrans = fc.splitGames(ttu)
+fc = FeatureCreator(files, scaling=PowerTransformer(), strat='rank')
+sts = fc.avdf.copy()
+Xtrans, ytrans = fc.loadGames(ttu)
 
 #%%
-#Feature selection, to remove redundancies, etc.
-transform = Pipeline([('features', FeatureUnion([('kpca_lin', KernelPCA(n_components=15, kernel='linear')),
-                          ('kpca_rbf', KernelPCA(n_components=15, kernel='rbf')),
-                          ('svd', Isomap(n_neighbors=15, n_components=5)),
-                          ('scores', Pipeline([('poly', PolynomialFeatures(degree=2)),
-                                               ('variance', VarianceThreshold()),
-                                               ('minfo', SelectPercentile(score_func=mutual_info_classif, percentile=10)),
-                                               ('fclass', SelectPercentile(score_func=f_classif, percentile=10))]))])),
-                      ('trim', SelectPercentile(score_func=mutual_info_classif, percentile=80))])
 
 print('Fitting features...')
-nfeats = pd.DataFrame(transform.fit_transform(Xtrans, ytrans))
-fc.reTransform(transform)
-Xt, yt, Xs, ys = fc.splitGames(ttu, split=2017)
 
-#nn = MLPClassifier()
-classifier = RandomForestClassifier(n_estimators=1500)
-ys_ll = OneHotEncoder(sparse=False).fit_transform(ys.reshape(-1, 1))
 
+f_transform = FeatureUnion([('kpca', KernelPCA(n_components=30, kernel='cosine')),
+                            ('linkpca', KernelPCA(n_components=20)),
+                            ('select', Pipeline([('minfo', SelectPercentile(score_func=mutual_info_classif, percentile=50)),
+                                                 ('fclass', SelectPercentile(score_func=f_classif, percentile=25))]))])
+g_transform = Pipeline([('svd', TruncatedSVD(n_components=20)),
+                        ('scale', RobustScaler())])
+
+fc.loadAndTransformGames(ttu, f_transform, g_transform, fc.getGameRank().values)
 #rf_pipe = Pipeline([('s1', transform), ('s2', rforest)])
 
 #%%
 print('Running grid search...')
-# rf_final = GridSearchCV(classifier,
-#                         cv=cv)
-classifier.fit(Xt, yt)
+for season in range(2015, 2020):
+    Xt, yt, Xs, ys = fc.splitGames(split=season)
+    ys_ll = OneHotEncoder(sparse=False).fit_transform(ys.reshape(-1, 1))
+    classifier = GridSearchCV(RandomForestClassifier(), 
+                              param_grid={'n_estimators':[500],
+                                          'criterion':['gini']}, 
+                              cv=cv)
+    classifier.fit(Xt, yt)
+    bracket = Bracket(season, files)
+    bracket.run(classifier, fc)
+    print('{}: {:.2f}, {:.2f}, {}'.format(season, bracket.loss, bracket.accuracy, bracket.espn_score))
 
-print('Log Losses')
-#print('NN: {:.2f}'.format(log_loss(ys_ll, nn_final.predict_proba(Xs))))
-print('RF: {:.2f}'.format(log_loss(ys_ll, classifier.predict_proba(Xs))))
-
-bracket = Bracket(2019, files)
-bracket.run(classifier, fc)
-print('Score: {}'.format(bracket.flat_score))
 bracket.printTree('./test.txt')
+showCorrs(sts, fc.avdf)

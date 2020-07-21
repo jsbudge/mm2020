@@ -16,6 +16,7 @@ import matplotlib.gridspec as gridspec
 import pandas as pd
 from statslib import loadTeamNames, getDiffs, normalizeToSeason
 import itertools
+from sklearn.feature_selection import SelectPercentile, mutual_info_classif, f_classif
 
 '''
 PlotGenerator
@@ -77,6 +78,13 @@ class PlotGenerator(object):
         ax1.set_xticks(theta)
         ax1.set_xticklabels(def_stats)
         
+def showCorrs(df1, df2):
+    disp = pd.DataFrame(index=df1.columns, columns=df2.columns)
+    for col in df2.columns:
+        disp[col] = abs(df1.corrwith(df2[col]))
+    plt.figure('Abs Corrs')
+    sns.heatmap(disp)
+        
 def showStat(df, stat, season, tid):
     tdf = df.loc[np.logical_and(df['Season'] == season,
                                    df['TID'] == tid)].sort_values('DayNum')
@@ -84,3 +92,12 @@ def showStat(df, stat, season, tid):
     sns.scatterplot(data=tdf, x='DayNum', y=stat)
     plt.plot(tdf['DayNum'], 
              tdf[stat])
+    
+def showScore(X, y):
+    disp = pd.DataFrame(index=X.columns, columns=['ANOVA_F', 'MINFO'])
+    disp['ANOVA_F'] = f_classif(X, y)[1]
+    disp['MINFO'] = mutual_info_classif(X, y)
+    disp = disp.T.reset_index()
+    plt.figure()
+    sns.barplot(data=disp.melt(id_vars=['index']), x='variable', y='value', hue='index', errwidth=0)
+    plt.xticks(rotation=45)

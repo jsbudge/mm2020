@@ -262,6 +262,8 @@ def getStats(df):
     wdf['O_GameScore'] = 40 * wdf['O_eFG%'] + 20 * wdf['O_R%'] + 15 * wdf['O_FT/A'] + 25 - 25 * wdf['O_TO%']
     wdf['T_ProdPoss'] = wdf['T_Poss'] - df['T_TO'] - (df['T_FGA'] - df['T_FGM'] + .44 * df['T_FTM'])
     wdf['O_ProdPoss'] = wdf['O_Poss'] - df['O_TO'] - (df['O_FGA'] - df['O_FGM'] + .44 * df['O_FTM'])
+    wdf['T_ProdPoss%'] = wdf['T_ProdPoss'] / wdf['T_Poss']
+    wdf['O_ProdPoss%'] = wdf['O_ProdPoss'] / wdf['O_Poss']
     
     return wdf.fillna(0)
 

@@ -13,6 +13,7 @@ import statslib as st
 from sklearn.metrics import log_loss
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold
+from itertools import combinations
 
 class Bracket(object):
     def __init__(self, season, files):
@@ -106,15 +107,14 @@ class Bracket(object):
     provided.
     
     Params:
-        df: DataFrame - frame with index of TID, containing the feature vectors
-                        for the teams that are playing.
         classifier: sklearn model with predict() and predict_proba() function call.
+        fc: FeatureCreator - prepped FeatureCreator.
     """
     def run(self, classifier, fc):
         for idx in range(self.structure.shape[0]):
             row = self.structure.iloc[idx]
-            vector = (fc.get(self.season, row['StrongSeed']) -\
-                      fc.get(self.season, row['WeakSeed'])).values.reshape(1, -1)
+            vector = fc.getGame(self.season, row['StrongSeed'],
+                                 row['WeakSeed'])
             gm_res = classifier.predict(vector)
             prob = classifier.predict_proba(vector)
             winner = row['StrongSeed'] if gm_res else row['WeakSeed']
@@ -133,6 +133,35 @@ class Bracket(object):
         self.flat_score = sum(success)
         self.loss = log_loss(success, self.structure.loc[self.structure['GameRound'] > 0, 'StrongSeed%'].values)
         self.accuracy = sum(success) / self.structure.loc[self.structure['GameRound'] > 0].shape[0]
+        
+    """
+    runAll
+    Runs through every possible matchup for the season using data provided and the trained classifier
+    provided.
+    
+    Params:
+        classifier: sklearn model with predict() and predict_proba() function call.
+        fc: FeatureCreator - prepped FeatureCreator.
+        
+    Returns:
+        poss_games: DataFrame - frame with team IDs and probabilities of winning.
+    """
+    def runAll(self, classifier, fc):
+        matches = [[x, y] for (x, y) in combinations(fc.getIndex(pd.Index([self.season])).index.get_level_values(1), 2)]
+        poss_games = pd.DataFrame(data=matches, columns=['T', 'O'])
+        poss_games['Season'] = self.season
+        vector = fc.g_transform.transform(fc.getIndex(poss_games.set_index(['Season', 'T']).index).values - \
+            fc.getIndex(poss_games.set_index(['Season', 'O']).index).values)
+        gm_res = classifier.predict(vector)
+        prob = classifier.predict_proba(vector)
+        poss_games['Winner'] = [i[gm_res[n]] for n, i in enumerate(matches)]
+        poss_games['W%'] = np.max(prob, axis=1)
+        p1 = poss_games.copy()
+        p1['T'], p1['O'] = poss_games['O'], poss_games['T']
+        p1['W%'] = 1 - poss_games['W%']
+        poss_games = poss_games.append(p1, ignore_index=True)
+        return poss_games
+        
     
     '''
     printTree
@@ -152,15 +181,29 @@ class Bracket(object):
         except:
             return False
         
+'''
+FeatureCreator
+an object that stores created features and transforms for later use.
+
+General usage
+1) Call fc = FeatureCreator(files)
+2) transform the feature vectors using feature_transform and an sklearn transform
+3) Load games using loadGames and a getGames frame
+4) transform the loaded games using game_transform and an sklearn transform
+    
+From here, you can load transformed games into a classifier or grab hypothetical games
+using getGame or splitGames, which creates a training and testing set.
+'''
 class FeatureCreator(object):
-    def __init__(self, files, strat='rank', transform=None, scaling=None):
+    def __init__(self, files, strat='rank', transform=None, scaling=None, rc=False):
         self.files = files
         self.tnames = st.loadTeamNames(files)
         self.scaler = scaling
         self.average_strat = strat
-        self.transform = None
+        self.f_transform = transform
+        self.g_transform = None
         self.init_sts = None
-        self.reload()
+        self.reload(rc=rc)
         
     def reload(self, rc=False):
         if self.init_sts is None:
@@ -173,27 +216,31 @@ class FeatureCreator(object):
             ttstats = st.getTourneyStats(ttu, ts, self.files)
             sts = st.getSeasonalStats(ts, strat=self.average_strat, recalc=rc)
             sts = sts.merge(ttstats[['T_FinalRank', 'T_FinalElo', 'T_Seed']], left_index=True, right_index=True)
-            self.games = ttstats[['GameRank', 'AdjGameRank']]
+            self.gamestats = ttstats[['GameRank', 'AdjGameRank']]
             self.init_sts = sts.copy()
         else:
             sts = self.init_sts.copy()
-        sts = st.normalizeToSeason(sts, scaler=self.scaler)
-        if self.transform is not None:
-            sts = pd.DataFrame(index=sts.index, data=self.transform.transform(sts))
+        if self.scaler is not None:
+            sts = st.normalizeToSeason(sts, scaler=self.scaler)
+        if self.f_transform is not None:
+            sts = pd.DataFrame(index=sts.index, data=self.f_transform.transform(sts))
         self.avdf = sts
+        
+    def getGameRank(self):
+        return self.gamestats['GameRank']
         
     def reAverage(self, strat):
         self.average_strat = strat
         self.init_sts = None
         self.reload()
         
-    def reTransform(self, transform):
-        self.transform = transform
+    def feature_transform(self, transform, y=None):
+        self.f_transform = transform.fit(self.avdf, y)
         self.reload()
         
-    def fit_transform(self, transform):
-        self.transform = transform.fit(self.init_sts)
-        self.reload()
+    def game_transform(self, transform):
+        self.g_transform = transform.fit(self.X, self.y)
+        self.X = pd.DataFrame(index=self.X.index, data=self.g_transform.transform(self.X))
         
     def reScale(self, scaling):
         self.scaler = scaling
@@ -205,16 +252,38 @@ class FeatureCreator(object):
     def getIndex(self, idx):
         return self.avdf.loc[idx]
     
-    def splitGames(self, gameframe, split=None):
+    def getGame(self, season, tid, oid):
+        try:
+            return self.X.loc[(season, tid, oid)].values.reshape(1, -1)
+        except:
+            return self.g_transform.transform((self.avdf.loc[(season, tid)].values - self.avdf.loc[(season, oid)].values).reshape(1, -1))
+    
+    def loadGames(self, gameframe):
         ttw = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'TID']]))
         ttl = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'OID']]))
         X = pd.DataFrame(ttw.values - ttl.values)
+        X['Season'] = gameframe['Season'].values
+        X['TID'] = gameframe['TID'].values
+        X['OID'] = gameframe['OID'].values
+        X = X.set_index(['Season', 'TID', 'OID'])
         y = (gameframe['T_Score'] - gameframe['O_Score'] > 0).values - 0
+        self.X = X; self.y = y
+        return X, y
+    
+    def loadAndTransformGames(self, gameframe, f_transform, g_transform, y=None):
+        self.feature_transform(f_transform, y)
+        self.loadGames(gameframe)
+        self.game_transform(g_transform)
+    
+    def splitGames(self, split=None):
         if split is None:
-            return X, y
+            return self.X, self.y
         else:
             if type(split) == int:
-                s = ttw.index.get_level_values(0) == split
-                return X.loc[np.logical_not(s)], y[np.logical_not(s)], X.loc[s], y[s]
-            train, test = next(split.split(X, y))
-            return X.iloc[train], y[train], X.iloc[test], y[test]
+                s = self.X.index.get_level_values(0) == split
+                self.train = np.logical_not(s); self.test = s
+            else:
+                train, test = next(split.split(self.X, self.y))
+                self.train = [s in train for s in range(self.X.shape[0])]
+                self.test = [s in test for s in range(self.X.shape[0])]
+            return self.X.loc[self.train], self.y[self.train], self.X.loc[self.test], self.y[self.test]

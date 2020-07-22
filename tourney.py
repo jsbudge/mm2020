@@ -200,31 +200,10 @@ class GameFrame(object):
         self.files = files
         self.tnames = st.loadTeamNames(files)
         self.frame = frame
-        
-        
-    def reload(self, rc=False):
-        if self.init_sts is None:
-            ts = st.getGames(self.files['MRegularSeasonDetailedResults']).drop(columns=['NumOT'])
-            ts = st.addRanks(ts)
-            ts = st.addElos(ts)
-            ts = st.joinFrame(ts, st.getStats(ts))
-            ts = st.joinFrame(ts, st.getInfluenceStats(ts, recalc=rc))
-            ttu = st.getGames(self.files['MNCAATourneyDetailedResults'])
-            ttstats = st.getTourneyStats(ttu, ts, self.files)
-            sts = st.getSeasonalStats(ts, strat=self.average_strat, recalc=rc)
-            sts = sts.merge(ttstats[['T_FinalRank', 'T_FinalElo', 'T_Seed']], left_index=True, right_index=True)
-            self.gamestats = ttstats[['GameRank', 'AdjGameRank']]
-            self.init_sts = sts.copy()
-        else:
-            sts = self.init_sts.copy()
-        if self.scaler is not None:
-            sts = st.normalizeToSeason(sts, scaler=self.scaler)
-        if self.f_transform is not None:
-            sts = pd.DataFrame(index=sts.index, data=self.f_transform.transform(sts))
-        self.avdf = sts
+        self.tourney_stats = st.getTourneyStats(frame.tdf, frame.sdf, files)
         
     def getGameRank(self):
-        return self.gamestats['GameRank']
+        return self.tourney_stats['GameRank']
         
     def reAverage(self, strat):
         self.average_strat = strat

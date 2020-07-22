@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
 from plotlib import PlotGenerator, showStat
 from sklearn.decomposition import KernelPCA
 from sklearn.cluster import AffinityPropagation, DBSCAN
+from tourney import Bracket, FeatureCreator, FeatureFrame
+from sklearn.preprocessing import StandardScaler, RobustScaler
 
 '''
 STUFF TO THINK ABOUT
@@ -46,29 +48,6 @@ This is the procedure to load all the rank, elo, weights, etc.
 CSV files
 '''
 files = st.getFiles()
-ts = st.getGames(files['MRegularSeasonDetailedResults'])
-ts_split = st.getGames(files['MRegularSeasonDetailedResults'], split=True)[0]
-weights = st.getSystemWeights(ts, files)
-ranks = st.getRanks(ts, files)
-elos = st.calcElo(ts_split)
-
-#Add each of them onto the frame to get a fully loaded frame
-ts = st.addRanks(ts)
-ts = st.addElos(ts)
-
-#Get frames with advanced stats
-tsa = st.getStats(ts)
-
-#Get frame with shift stats
-ts_shift = st.getInfluenceStats(tsa)
-
-#Merge everything together
-tsfull = st.joinFrame(ts, tsa)
-tsfull = st.joinFrame(tsfull, ts_shift)
-
-#Get seasonally averaged stats
-sts = st.getSeasonalStats(tsfull)
-
-plotter = PlotGenerator(tsfull, sts, files, season=2019)
-
-plotter.showTeamOverall(1140)
+feats = FeatureFrame(files)
+feats.add_transform(StandardScaler(), RobustScaler())
+feats.execute(season=2019)

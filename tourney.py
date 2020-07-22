@@ -14,6 +14,7 @@ from sklearn.metrics import log_loss
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold
 from itertools import combinations
+from sklearn.pipeline import Pipeline, FeatureUnion
 
 class Bracket(object):
     def __init__(self, season, files):
@@ -194,16 +195,12 @@ General usage
 From here, you can load transformed games into a classifier or grab hypothetical games
 using getGame or splitGames, which creates a training and testing set.
 '''
-class FeatureCreator(object):
-    def __init__(self, files, strat='rank', transform=None, scaling=None, rc=False):
+class GameFrame(object):
+    def __init__(self, files, frame):
         self.files = files
         self.tnames = st.loadTeamNames(files)
-        self.scaler = scaling
-        self.average_strat = strat
-        self.f_transform = transform
-        self.g_transform = None
-        self.init_sts = None
-        self.reload(rc=rc)
+        self.frame = frame
+        
         
     def reload(self, rc=False):
         if self.init_sts is None:
@@ -258,7 +255,7 @@ class FeatureCreator(object):
         except:
             return self.g_transform.transform((self.avdf.loc[(season, tid)].values - self.avdf.loc[(season, oid)].values).reshape(1, -1))
     
-    def loadGames(self, gameframe):
+    def loadGames(self, gameframe=None):
         ttw = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'TID']]))
         ttl = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'OID']]))
         X = pd.DataFrame(ttw.values - ttl.values)
@@ -287,3 +284,70 @@ class FeatureCreator(object):
                 self.train = [s in train for s in range(self.X.shape[0])]
                 self.test = [s in test for s in range(self.X.shape[0])]
             return self.X.loc[self.train], self.y[self.train], self.X.loc[self.test], self.y[self.test]
+        
+class FeatureFrame(object):
+    def __init__(self, files, strat='rank', scaling=None):
+        ts = st.getGames(files['MRegularSeasonDetailedResults']).drop(columns=['NumOT'])
+        ts = st.addRanks(ts)
+        ts = st.addElos(ts)
+        ts = st.joinFrame(ts, st.getStats(ts))
+        ts = st.joinFrame(ts, st.getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
+        tsdays = ts['DayNum']
+        ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])
+        ty = ts['T_Score'] > ts['O_Score'] - 0
+        tts = st.getGames(files['MNCAATourneyDetailedResults']).drop(columns=['NumOT']).set_index(['GameID', 'Season', 'TID', 'OID'])
+        ttsdays = tts['DayNum']
+        tts = tts.drop(columns=['DayNum'])
+        tty = tts['T_Score'] > tts['O_Score'] - 0
+        seasonal = st.getSeasonalStats(ts, seasonal_only=True)
+        if scaling is not None:
+            ts = st.normalizeToSeason(ts, scaling=scaling)
+        self.files = files
+        self.strat = strat
+        self.tnames = st.loadTeamNames(files)
+        self.tdf = tts
+        self.sdf = ts
+        self.sdf_y = ty
+        self.tdf_y = tty
+        self.sdf_d = tsdays
+        self.tdf_d = ttsdays
+        self.seasonal = seasonal
+        self.actions = []
+        
+    def add_transform(self, *args):
+        for t in args:
+            self.actions.append(t)
+        
+    def add(self, fname, feature):
+        self.sdf[fname] = feature(self.sdf)
+        #self.tdf[fname] = feature(self.tdf)
+        
+    def remove(self, fname):
+        self.sdf = self.sdf.drop(columns=[fname])
+        #self.tdf = self.tdf.drop(columns=[fname])
+        
+    def get(self, fname, is_season=True):
+        if is_season:
+            return self.sdf[fname]
+        else:
+            return self.tdf[fname]
+        
+    def execute(self, season=None, y_fit=None, on_avs=False):
+        y = y_fit if y_fit is not None else self.sdf_y
+        if len(self.actions) > 0:
+            pipe = Pipeline([('t{}'.format(n), act) for n, act in enumerate(self.actions)])
+        if not on_avs:
+            self.sdf = pd.DataFrame(data=pipe.fit_transform(self.sdf, y),
+                                    index = self.sdf.index,
+                                    columns=self.sdf.columns)
+        if season is not None:
+            sts = st.getSeasonalStats(self.sdf.loc(axis=0)[:, season, :, :], strat=self.strat)
+        else:
+            sts = st.getSeasonalStats(self.sdf, strat=self.strat)
+        sts[self.seasonal.columns] = self.seasonal.loc[sts.index]
+        if on_avs:
+            sts = pd.DataFrame(data=pipe.fit_transform(sts, y),
+                                    index = sts.index,
+                                    columns=sts.columns)
+        self.sts = sts
+        return sts

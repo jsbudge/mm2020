@@ -201,68 +201,107 @@ class GameFrame(object):
         self.tnames = st.loadTeamNames(files)
         self.frame = frame
         self.tourney_stats = st.getTourneyStats(frame.tdf, frame.sdf, files)
+        self.loadGames(self.frame.tdf.index)
+        self.classifier = []
+        self.transforms = []
         
-    def getGameRank(self):
-        return self.tourney_stats['GameRank']
+    def getGameRank(self, season=None, tid=None):
+        df = self.tourney_stats['GameRank']
+        df = df.loc(axis=0)[season, :] if season is not None else df
+        df = df.loc(axis=0)[:, tid] if tid is not None else df
+        return df
         
-    def reAverage(self, strat):
-        self.average_strat = strat
-        self.init_sts = None
-        self.reload()
-        
-    def feature_transform(self, transform, y=None):
-        self.f_transform = transform.fit(self.avdf, y)
-        self.reload()
-        
-    def game_transform(self, transform):
-        self.g_transform = transform.fit(self.X, self.y)
-        self.X = pd.DataFrame(index=self.X.index, data=self.g_transform.transform(self.X))
-        
-    def reScale(self, scaling):
-        self.scaler = scaling
-        self.reload()
-        
-    def get(self, season, tid):
-        return self.avdf.loc[(season, tid), :]
-    
-    def getIndex(self, idx):
-        return self.avdf.loc[idx]
-    
-    def getGame(self, season, tid, oid):
+    def get(self, season=None, tid=None, oid=None):
+        df = self.X
         try:
-            return self.X.loc[(season, tid, oid)].values.reshape(1, -1)
+            df = df.loc(axis=0)[:, season, :, :] if season is not None else df
+            df = df.loc(axis=0)[:, :, tid, :] if tid is not None else df
+            df = df.loc(axis=0)[:, :, :, oid] if oid is not None else df
+            y = self.y[df.index]
+            if df.shape[0] == 1:
+                return df.values.reshape(1, -1), y.values
+            else:
+                return df.values, y.values
         except:
-            return self.g_transform.transform((self.avdf.loc[(season, tid)].values - self.avdf.loc[(season, oid)].values).reshape(1, -1))
+            #Game isn't in the X frame, we'll have to create it
+            t1 = self.frame.sts.loc(axis=0)[season, tid].values
+            t2 = self.frame.sts.loc(axis=0)[season, oid].values
+            #Since the game hasn't been played for reals, y can be anything
+            return (t1 - t2).reshape(1, -1), np.array([True])
+        
+    def add_t(self, ts):
+        try:
+            self.transforms = self.transforms + ts
+        except:
+            self.transforms.append(ts)
+            
+    def remove_t(self, name):
+        for idx, n in enumerate(self.transforms):
+            if n[0] == name:
+                return self.transforms.pop(idx)
+        return None
     
-    def loadGames(self, gameframe=None):
-        ttw = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'TID']]))
-        ttl = self.getIndex(pd.MultiIndex.from_frame(gameframe[['Season', 'OID']]))
-        X = pd.DataFrame(ttw.values - ttl.values)
-        X['Season'] = gameframe['Season'].values
-        X['TID'] = gameframe['TID'].values
-        X['OID'] = gameframe['OID'].values
-        X = X.set_index(['Season', 'TID', 'OID'])
-        y = (gameframe['T_Score'] - gameframe['O_Score'] > 0).values - 0
+    def run_t(self):
+        if np.any(self.transforms):
+            pipe = Pipeline(self.transforms)
+            self.X = pd.DataFrame(index = self.X.index, columns=self.X.columns,
+                                  data = pipe.fit_transform(self.X, self.y))
+    
+    def add_c(self, ts):
+        try:
+            self.classifier = self.classifier + ts
+        except:
+            self.classifier.append(ts)
+            
+    def remove_c(self, name):
+        for idx, n in enumerate(self.classifier):
+            if n[0] == name:
+                return self.classifier.pop(idx)
+        return None
+    
+    def run_c(self, Xt, yt, Xs, ys):
+        if np.any(self.classifier):
+            print('===CLASSIFICATION RESULTS===\nClassifier\tLoss\tAccuracy')
+            for c in self.classifier:
+                c[1].fit(Xt, yt)
+                print(c[0] + '\t{:.2f}\t{:.2f}'.format(log_loss(ys, c[1].predict_proba(Xs)),
+                                                       sum(np.logical_and(ys, c[1].predict(Xs))) / len(ys) * 100))
+        else:
+            print('No classifiers loaded.')
+    
+    def execute(self, Xt, yt, Xs, ys):
+        self.run_t()
+        self.run_c(Xt, yt, Xs, ys)
+    
+    def loadGames(self, game_idx, y=None):
+        ttl = pd.DataFrame(index=game_idx).merge(self.frame.sts, 
+                                                        left_on=['Season', 'OID'], 
+                                                        right_on=['Season', 'TID'], 
+                                                        right_index=True).sort_index(level=0)
+        X = ttl.groupby(['GameID']).diff().fillna(0) + ttl.groupby(['GameID']).diff(periods=-1).fillna(0)
+        if y is None:
+            try:
+                y = self.frame.tdf_y.loc[X.index]
+            except:
+                y = self.frame.sdf_y.loc[X.index]
         self.X = X; self.y = y
         return X, y
     
-    def loadAndTransformGames(self, gameframe, f_transform, g_transform, y=None):
-        self.feature_transform(f_transform, y)
-        self.loadGames(gameframe)
-        self.game_transform(g_transform)
-    
-    def splitGames(self, split=None):
+    def splitGames(self, split=None, as_frame=False):
         if split is None:
             return self.X, self.y
         else:
-            if type(split) == int:
-                s = self.X.index.get_level_values(0) == split
+            try:
+                s = self.X.index.get_level_values(1) == split
                 self.train = np.logical_not(s); self.test = s
-            else:
+            except:
                 train, test = next(split.split(self.X, self.y))
                 self.train = [s in train for s in range(self.X.shape[0])]
                 self.test = [s in test for s in range(self.X.shape[0])]
-            return self.X.loc[self.train], self.y[self.train], self.X.loc[self.test], self.y[self.test]
+            if as_frame:
+                return self.X.loc[self.train], self.y[self.train], self.X.loc[self.test], self.y[self.test]
+            else:
+                return self.X.loc[self.train].values, self.y[self.train].values, self.X.loc[self.test].values, self.y[self.test].values
         
 class FeatureFrame(object):
     def __init__(self, files, strat='rank', scaling=None):
@@ -280,7 +319,7 @@ class FeatureFrame(object):
         tty = tts['T_Score'] > tts['O_Score'] - 0
         seasonal = st.getSeasonalStats(ts, seasonal_only=True)
         if scaling is not None:
-            ts = st.normalizeToSeason(ts, scaling=scaling)
+            ts = st.normalizeToSeason(ts, scaler=scaling)
         self.files = files
         self.strat = strat
         self.tnames = st.loadTeamNames(files)
@@ -293,32 +332,45 @@ class FeatureFrame(object):
         self.seasonal = seasonal
         self.actions = []
         
-    def add_transform(self, *args):
-        for t in args:
-            self.actions.append(t)
-        
-    def add(self, fname, feature):
+    def add_t(self, ts):
+        try:
+            self.actions = self.actions + ts
+        except:
+            self.actions.append(ts)
+            
+    def remove_t(self, name):
+        for idx, n in enumerate(self.actions):
+            if n[0] == name:
+                return self.actions.pop(idx)
+        return None
+                
+    def add_f(self, fname, feature):
         self.sdf[fname] = feature(self.sdf)
-        #self.tdf[fname] = feature(self.tdf)
         
-    def remove(self, fname):
+    def remove_f(self, fname):
         self.sdf = self.sdf.drop(columns=[fname])
-        #self.tdf = self.tdf.drop(columns=[fname])
         
-    def get(self, fname, is_season=True):
+    def get_f(self, fname, is_season=True):
         if is_season:
             return self.sdf[fname]
         else:
             return self.tdf[fname]
         
+    def get(self, season=None, tid=None, oid=None, is_season=True):
+        df = self.sdf if is_season else self.tdf
+        df = df.loc(axis=0)[:, season, :, :] if season is not None else df
+        df = df.loc(axis=0)[:, :, tid, :] if tid is not None else df
+        df = df.loc(axis=0)[:, :, :, oid] if oid is not None else df
+        return df
+        
     def execute(self, season=None, y_fit=None, on_avs=False):
         y = y_fit if y_fit is not None else self.sdf_y
-        if len(self.actions) > 0:
-            pipe = Pipeline([('t{}'.format(n), act) for n, act in enumerate(self.actions)])
-        if not on_avs:
-            self.sdf = pd.DataFrame(data=pipe.fit_transform(self.sdf, y),
-                                    index = self.sdf.index,
-                                    columns=self.sdf.columns)
+        if np.any(self.actions):
+            pipe = Pipeline(self.actions)
+            if not on_avs:
+                self.sdf = pd.DataFrame(data=pipe.fit_transform(self.sdf, y),
+                                        index = self.sdf.index,
+                                        columns=self.sdf.columns)
         if season is not None:
             sts = st.getSeasonalStats(self.sdf.loc(axis=0)[:, season, :, :], strat=self.strat)
         else:

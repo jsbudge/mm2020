@@ -131,22 +131,13 @@ Returns:
 '''
 def normalizeToSeason(df, scaler=None):
     wdf = df.copy()
-    if 'Season' in df.columns:
-        for season, sdf in df.groupby(['Season']):
-            if scaler is not None:
-                wdf.loc[df['Season'] == season] = scaler.fit_transform(sdf)
-            else:
-                for col in sdf.columns:
-                    if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
-                        wdf.loc[df['Season'] == season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
-    elif 'Season' in df.index.names:
-        for season, sdf in df.groupby('Season'):
-            if scaler is not None:
-                wdf.loc[season] = scaler.fit_transform(sdf)
-            else:
-                for col in sdf.columns:
-                    if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
-                        wdf.loc[season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
+    for season, sdf in df.groupby('Season'):
+        if scaler is not None:
+            wdf.loc(axis=0)[:, season, :, :] = scaler.fit_transform(sdf)
+        else:
+            for col in sdf.columns:
+                if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
+                    wdf.loc[season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
     return wdf
 
 '''
@@ -208,12 +199,8 @@ def getTourneyStats(tdf, df, files):
                                       seeds['TeamID'] == idx[1]), 'Seed'].values[0][1:]
         sd = int(sd[:-1]) if len(sd) > 2 else int(sd)
         wdf.loc[idx, 'T_Seed'] = sd
-        wdf.loc[idx, 'T_FinalElo'] = df.loc[np.logical_and(df['Season'] == idx[0],
-                                                           df['TID'] == idx[1]),
-                                            'T_Elo'].values[-1]
-        wdf.loc[idx, 'T_FinalRank'] =df.loc[np.logical_and(df['Season'] == idx[0],
-                                                           df['TID'] == idx[1]),
-                                            'T_Rank'].values[-1]
+        wdf.loc[idx, 'T_FinalElo'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values[-1]
+        wdf.loc[idx, 'T_FinalRank'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values[-1]
     return wdf
 
 '''

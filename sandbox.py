@@ -20,7 +20,8 @@ import matplotlib.pyplot as plt
 from plotlib import PlotGenerator, showStat
 from sklearn.decomposition import KernelPCA
 from sklearn.cluster import AffinityPropagation, DBSCAN
-from tourney import Bracket, FeatureCreator, FeatureFrame
+from tourney import Bracket, FeatureFrame, GameFrame
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
 '''
@@ -48,6 +49,15 @@ This is the procedure to load all the rank, elo, weights, etc.
 CSV files
 '''
 files = st.getFiles()
-feats = FeatureFrame(files)
-feats.add_transform(StandardScaler(), RobustScaler())
-feats.execute(season=2019)
+feats = FeatureFrame(files, scaling=StandardScaler())
+#feats.add_t(('as', StandardScaler()))
+print('Transforming features...')
+feats.execute()
+#other = feats.get(tid=1141)
+print('Running GameFrame...')
+test = GameFrame(files, feats)
+test.add_t(('rs', RobustScaler()))
+test.add_c(('rf', RandomForestClassifier()))
+print('Executing...')
+test.execute(*test.splitGames(2019))
+#Xt, yt, Xs, ys = test.splitGames(2019)

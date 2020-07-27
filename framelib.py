@@ -83,3 +83,9 @@ def merge(*args):
         else:
             df = df.merge(d, left_index=True, right_index=True)
     return df
+
+def transformFrame(df, trans, fit=False):
+    if fit:
+        return pd.DataFrame(index=df.index, data=trans.fit_transform(df))
+    else:
+        return pd.DataFrame(index=df.index, data=trans.transform(df))

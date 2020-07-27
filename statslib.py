@@ -115,6 +115,20 @@ def getGames(fnme, split=False):
         w = w.rename(columns={'T_TeamID': 'TID', 'O_TeamID': 'OID'})
         l = l.rename(columns={'T_TeamID': 'TID', 'O_TeamID': 'OID'})
         return w, l
+    
+"""
+NOT COMPLETE
+"""
+def addRegressionStats(df, gr):
+    lms = [('RF', RandomForestRegressor(n_estimators=500)),
+       ('SGD', SGDRegressor()),
+       ('ARD', ARDRegression()),
+       ('NN', MLPRegressor())]
+    for lm in lms:
+        sgd = make_pipeline(StandardScaler(), 
+                            lm[1]).fit(finfo.fit_transform(sts, ts['AdjGameRank']), ts['AdjGameRank'])
+        sts[lm[0]] = sgd.predict(finfo.transform(sts))
+    return sts
          
 '''
 normalizeToSeason

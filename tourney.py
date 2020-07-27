@@ -111,13 +111,10 @@ class Bracket(object):
         classifier: sklearn model with predict() and predict_proba() function call.
         fc: FeatureCreator - prepped FeatureCreator.
     """
-    def run(self, classifier, fc):
+    def run(self, fc):
         for idx in range(self.structure.shape[0]):
             row = self.structure.iloc[idx]
-            vector = fc.getGame(self.season, row['StrongSeed'],
-                                 row['WeakSeed'])
-            gm_res = classifier.predict(vector)
-            prob = classifier.predict_proba(vector)
+            gm_res, prob = fc.classify(self.season, row['StrongSeed'], row['WeakSeed'])
             winner = row['StrongSeed'] if gm_res else row['WeakSeed']
             self.structure.loc[self.structure['Slot'] == row['Slot'], 
                                ['Winner', 'StrongSeed%', 'WeakSeed%']] = \
@@ -202,8 +199,11 @@ class GameFrame(object):
         self.frame = frame
         self.tourney_stats = st.getTourneyStats(frame.tdf, frame.sdf, files)
         self.loadGames(self.frame.tdf.index)
-        self.classifier = []
-        self.transforms = []
+        self.clist = []
+        self.tlist = []
+        self.class_rank = []
+        self.bc = None
+        self.trans = None
         
     def getGameRank(self, season=None, tid=None):
         df = self.tourney_stats['GameRank']
@@ -227,47 +227,60 @@ class GameFrame(object):
             t1 = self.frame.sts.loc(axis=0)[season, tid].values
             t2 = self.frame.sts.loc(axis=0)[season, oid].values
             #Since the game hasn't been played for reals, y can be anything
-            return (t1 - t2).reshape(1, -1), np.array([True])
+            return self.trans.transform((t1 - t2).reshape(1, -1)), np.array([True])
         
     def add_t(self, ts):
         try:
-            self.transforms = self.transforms + ts
+            self.tlist = self.tlist + ts
         except:
-            self.transforms.append(ts)
+            self.tlist.append(ts)
             
     def remove_t(self, name):
-        for idx, n in enumerate(self.transforms):
+        for idx, n in enumerate(self.tlist):
             if n[0] == name:
-                return self.transforms.pop(idx)
+                return self.tlist.pop(idx)
         return None
     
     def run_t(self):
-        if np.any(self.transforms):
-            pipe = Pipeline(self.transforms)
-            self.X = pd.DataFrame(index = self.X.index, columns=self.X.columns,
-                                  data = pipe.fit_transform(self.X, self.y))
+        if np.any(self.tlist):
+            self.trans = Pipeline(self.tlist)
+            self.X = pd.DataFrame(index = self.X.index,
+                                  data = self.trans.fit_transform(self.X, self.y))
     
     def add_c(self, ts):
         try:
-            self.classifier = self.classifier + ts
+            self.clist = self.clist + ts
         except:
-            self.classifier.append(ts)
+            self.clist.append(ts)
+        self.class_rank = [0 for n in self.clist]
             
     def remove_c(self, name):
-        for idx, n in enumerate(self.classifier):
+        for idx, n in enumerate(self.clist):
             if n[0] == name:
-                return self.classifier.pop(idx)
+                return self.clist.pop(idx)
         return None
     
     def run_c(self, Xt, yt, Xs, ys):
-        if np.any(self.classifier):
+        if np.any(self.clist):
             print('===CLASSIFICATION RESULTS===\nClassifier\tLoss\tAccuracy')
-            for c in self.classifier:
+            for n, c in enumerate(self.clist):
                 c[1].fit(Xt, yt)
-                print(c[0] + '\t{:.2f}\t{:.2f}'.format(log_loss(ys, c[1].predict_proba(Xs)),
-                                                       sum(np.logical_and(ys, c[1].predict(Xs))) / len(ys) * 100))
+                loss = log_loss(ys, c[1].predict_proba(Xs))
+                acc = sum(np.logical_and(ys, c[1].predict(Xs))) / len(ys) * 100
+                self.class_rank[n] = acc
+                print(c[0] + '\t{:.2f}\t{:.2f}'.format(loss, acc))
+            output = [0] * len(self.clist)
+            for i, x in enumerate(sorted(range(len(self.clist)), key=lambda y: self.clist[y])):
+                if i == 0:
+                    self.bc = self.clist[x]
+                output[x] = i
+            self.class_rank = output
         else:
             print('No classifiers loaded.')
+            
+    def classify(self, season=None, tid=None, oid=None):
+        t = self.get(season, tid, oid)[0]
+        return self.bc[1].predict(t), self.bc[1].predict_proba(t)
     
     def execute(self, Xt, yt, Xs, ys):
         self.run_t()

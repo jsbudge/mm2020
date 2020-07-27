@@ -78,7 +78,7 @@ for season in range(2015, 2020):
     Xt, yt, Xs, ys = fc.splitGames(split=season)
     ys_ll = OneHotEncoder(sparse=False).fit_transform(ys.reshape(-1, 1))
     classifier = GridSearchCV(RandomForestClassifier(), 
-                              param_grid={'n_estimators':[500],
+                              param_grid={'n_estimators':[100, 200, 300, 400, 500],
                                           'criterion':['gini']}, 
                               cv=cv)
     classifier.fit(Xt, yt)

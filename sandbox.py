@@ -22,7 +22,7 @@ from sklearn.decomposition import KernelPCA
 from sklearn.cluster import AffinityPropagation, DBSCAN
 from tourney import Bracket, FeatureFrame, GameFrame
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler, SelectPercentile
 
 '''
 STUFF TO THINK ABOUT

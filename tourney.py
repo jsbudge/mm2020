@@ -111,10 +111,12 @@ class Bracket(object):
         classifier: sklearn model with predict() and predict_proba() function call.
         fc: FeatureCreator - prepped FeatureCreator.
     """
-    def run(self, fc):
+    def run(self, classifier, ag):
         for idx in range(self.structure.shape[0]):
             row = self.structure.iloc[idx]
-            gm_res, prob = fc.classify(self.season, row['StrongSeed'], row['WeakSeed'])
+            gm = ag.loc(axis=0)[:, self.season, row['StrongSeed'], row['WeakSeed']]
+            gm_res = classifier.predict(gm)
+            prob = classifier.predict_proba(gm)
             winner = row['StrongSeed'] if gm_res else row['WeakSeed']
             self.structure.loc[self.structure['Slot'] == row['Slot'], 
                                ['Winner', 'StrongSeed%', 'WeakSeed%']] = \

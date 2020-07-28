@@ -44,6 +44,7 @@ def loadGames(sts, game_idx):
     return X
 
 def splitGames(X, y, split=None, as_frame=False):
+    X = X.sort_index(); y = y.sort_index()
     if split is None:
         return X, y
     else:

@@ -12,6 +12,12 @@ from scipy.linalg import solve
 from scipy.stats import hmean
 import statsmodels.api as sm
 from sklearn.preprocessing import RobustScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.linear_model import HuberRegressor, Lars, ElasticNet, Lasso, SGDRegressor, TheilSenRegressor, \
+    ARDRegression, LassoLars
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
               'OR', 'DR', 'Ast', 'TO', 'Stl', 'Blk', 'PF']
@@ -120,14 +126,16 @@ def getGames(fnme, split=False):
 NOT COMPLETE
 """
 def addRegressionStats(df, gr):
+    sts = df.copy()
     lms = [('RF', RandomForestRegressor(n_estimators=500)),
        ('SGD', SGDRegressor()),
        ('ARD', ARDRegression()),
-       ('NN', MLPRegressor())]
+       ('NN', MLPRegressor(max_iter=1000)),
+       ('Theil', TheilSenRegressor())]
     for lm in lms:
         sgd = make_pipeline(StandardScaler(), 
-                            lm[1]).fit(finfo.fit_transform(sts, ts['AdjGameRank']), ts['AdjGameRank'])
-        sts[lm[0]] = sgd.predict(finfo.transform(sts))
+                            lm[1]).fit(sts, gr)
+        sts[lm[0]] = sgd.predict(sts)
     return sts
          
 '''
@@ -639,6 +647,4 @@ def lowess(x, y, w, x0=None, f=.1, n_iter=3):
         return yest
     else:
         return np.interp(x0, x, yest)
-    
-    
         

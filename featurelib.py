@@ -16,7 +16,7 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 from scipy.stats import hmean
 from sklearn.feature_selection import RFECV, SelectKBest, mutual_info_classif, f_classif, \
-    SelectPercentile, VarianceThreshold
+    SelectPercentile, VarianceThreshold, f_regression, mutual_info_regression
 from sklearn.metrics import log_loss, accuracy_score, average_precision_score, roc_auc_score
 from sklearn.preprocessing import OneHotEncoder
 
@@ -28,12 +28,22 @@ def getFeatureInfo(X, y):
     ret.loc['CORR'] = X.corrwith(y)
     return ret
 
+def getFeatureSimilarityMatrix(X):
+    temp = X.corr()
+    for n, col in enumerate(temp.columns):
+        mx = X[col].values
+        m_score = mutual_info_regression(X, mx)
+        temp[col] = np.sqrt(temp[col].values**2 + (m_score / m_score[n])**2)
+    #Scale to one
+    temp /= np.sqrt(2)
+    return temp
+
 def classify(X, y, cl, cv=None):
     if cv is None:
         cv = StratifiedKFold(n_splits=5, shuffle=True)
     d = {}
     for c in cl:
-        r = pd.DataFrame(columns=['Loss', 'Acc', 'AP', 'ROC'], index=np.arange(cv.n_splits))
+        r = pd.DataFrame(columns=['Loss', 'Acc', 'AP', 'ROC'], index=np.arange(cv.n_splits+1))
         
         for n, (train, test) in enumerate(cv.split(X, y)):
             tshuff = np.random.permutation(len(train))
@@ -44,12 +54,38 @@ def classify(X, y, cl, cv=None):
                          accuracy_score(y.iloc[test].iloc[sshuff].values, res[:, 1] > .5),
                          average_precision_score(y.iloc[test].iloc[sshuff].values, res[:, 1]),
                          roc_auc_score(y.iloc[test].iloc[sshuff].values, res[:, 1])]
+        r.iloc[-1] = r.iloc[:n].mean()
         d[c[0]] = r
         try:
             d[c[0] + '_feat_im'] = c[1].feature_importances_
         except:
             d[c[0] + '_feat_im'] = 0
     return d
+
+def proprietaryFeats(X):
+    Xt = pd.DataFrame()
+    #Tournament offense measure
+    cols = ['T_Score', 'T_FGM', 'T_FG%', 'T_PPS', 'T_eFG%', 'T_TS%', 'T_OffRat', 'T_GameScore']
+    means = np.array([ 69.49013453,  24.59596413,   0.43763814,   0.99341058,
+         0.49670529,   0.53726438, 109.89510644,  55.40504212])
+    stds = np.array([11.9804552 ,  4.75260377,  0.07539385,  0.17392086,  0.08696043,
+        0.08189926, 16.45710437,  5.0516743 ])
+    lambdas = np.array([0.57941522, 0.39628254, 0.0207777 , 0.37880789, 0.06679493,
+       0.93635365, 1.00223   , 0.49847729])
+    #Remove mean and standard deviation
+    for n, c in enumerate(cols):
+        Xt[c] = (X[c] - means[n]) / stds[n]
+        #Yeo-Johnson transform
+        if lambdas[n] != 0:
+            Xt.loc[Xt[c] >= 0, c] = ((Xt.loc[Xt[c] >= 0, c] + 1)**lambdas[n] - 1) / lambdas[n]
+        else:
+            Xt.loc[Xt[c] >= 0, c] = np.log(Xt.loc[Xt[c] >= 0, c] + 1)
+        if lambdas[n] != 2:
+            Xt.loc[Xt[c] < 0, c] = -((-Xt.loc[Xt[c] < 0, c] + 1)**(2 - lambdas[n]) - 1) / (2 - lambdas[n])
+        else:
+            Xt.loc[Xt[c] < 0, c] = -np.log(-Xt.loc[Xt[c] < 0, c] + 1)
+    Xt['TourneyOffenseRat'] = np.mean(Xt, axis=1) * 50 / 3 + 50
+    return Xt
         
 class seasonalCV(object):
     def __init__(self, seasons):

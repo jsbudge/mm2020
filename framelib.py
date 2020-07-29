@@ -15,7 +15,7 @@ import statslib as st
 from itertools import combinations, permutations
 
 def arrangeFrame(files, scaling=None):
-    ts = st.getGames(files['MRegularSeasonDetailedResults']).drop(columns=['NumOT'])
+    ts = st.getGames(files['MRegularSeasonDetailedResults']).drop(columns=['NumOT', 'GLoc'])
     ts = st.addRanks(ts)
     ts = st.addElos(ts)
     ts = st.joinFrame(ts, st.getStats(ts))
@@ -28,7 +28,7 @@ def arrangeFrame(files, scaling=None):
     return ts, ty, tsdays
 
 def arrangeTourneyGames(files):
-    tts = st.getGames(files['MNCAATourneyDetailedResults']).drop(columns=['NumOT'])
+    tts = st.getGames(files['MNCAATourneyDetailedResults']).drop(columns=['NumOT', 'GLoc'])
     tts = st.joinFrame(tts, st.getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])
     ttsdays = tts['DayNum']
     tts = tts.drop(columns=['DayNum'])
@@ -87,6 +87,7 @@ def merge(*args):
 
 def transformFrame(df, trans, fit=False):
     if fit:
-        return pd.DataFrame(index=df.index, data=trans.fit_transform(df))
+        dt = trans.fit_transform(df)
+        return pd.DataFrame(index=df.index, data=dt), trans
     else:
         return pd.DataFrame(index=df.index, data=trans.transform(df))

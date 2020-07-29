@@ -362,14 +362,10 @@ Returns:
     wdf: DataFrame - frame with all opponent stuff stripped.
 '''
 def getTeamStats(df, av=False):
-    if av:
-        wdf = pd.DataFrame(index=df.index)
-    else:
-        wdf = df[id_cols].drop(columns=['OID'])
+    wdf = pd.DataFrame(index=df.index)
     for col in df.columns:
-        if col not in id_cols:
-            if col[:2] == 'T_':
-                wdf[col] = df[col]
+        if col[:2] == 'T_':
+            wdf[col] = df[col]
     return wdf
         
 '''
@@ -412,8 +408,9 @@ Returns:
                                 games for ranking systems. Same index
                                 and columns as sweights.
 '''
-def getSystemWeights(df, files):
+def calcSystemWeights(files):
     #This should only need to be run once, since it saves its results out to a CSV
+    df = getGames(files['MRegularSeasonDetailedResults'], split=False)
     mo = pd.read_csv(files['MMasseyOrdinals'])
     sweights = pd.DataFrame(data=np.nan, index=list(set(mo['SystemName'])), columns=list(set(df['Season'])))
     sprobs = pd.DataFrame(data=np.nan, index=list(set(mo['SystemName'])), columns=list(set(df['Season'])))
@@ -538,25 +535,28 @@ Params:
 Returns:
     wdf: DataFrame - frame with GameID, TID, OID, T_Elo, and O_Elo columns.
 '''
-def calcElo(df, K=35, margin=4.5):
-    tids = list(set(df['TID'].values))
+def calcElo(files, K=35, margin=4.5):
+    df = pd.read_csv(files['MRegularSeasonCompactResults'])
+    tids = list(set(df['WTeamID'].values) & set(df['LTeamID'].values))
     elos = dict(zip(list(tids), [1500] * len(tids)))
-    wdf = df[['GameID', 'TID', 'OID']].copy()
+    wdf = df[['Season', 'WTeamID', 'LTeamID', 'WLoc', 'DayNum']].copy().rename(columns={'WTeamID': 'TID', 'LTeamID': 'OID'})
+    wdf = wdf.loc[wdf['Season'] >= 2000]
     wdf.loc[:, 'T_Elo'] = 1500
     wdf.loc[:, 'O_Elo'] = 1500
+    wdf['ScoreDiff'] = df['WScore'] - df['LScore']
     season = df['Season'].min()
-    for idx, gm in tqdm(df.iterrows()):
+    for idx, gm in tqdm(wdf.iterrows()):
         #First, regression to the mean if the season is new
         if season != gm['Season']:
             for key in elos:
                 elos[key] = .25 * elos[key] + .75 * 1500
             season = gm['Season']
         #Elo calculation stolen from 538
-        elo_diff = elos[gm['TID']] + (gm['GLoc'] * 100) - elos[gm['OID']]
-        mov = gm['T_Score'] - gm['O_Score']
+        hc_adv = 100 if gm['WLoc'] == 'H' else -100 if gm['WLoc'] == 'A' else 0
+        elo_diff = elos[gm['TID']] + hc_adv - elos[gm['OID']]
         elo_shift = 1. / (10. ** (-elo_diff / 400.) + 1.)
         exp_margin = margin + 0.006 * elo_diff
-        final_elo_update = K * ((mov + 3.) ** 0.8) / exp_margin * (1 - elo_shift)
+        final_elo_update = K * ((gm['ScoreDiff'] + 3.) ** 0.8) / exp_margin * (1 - elo_shift)
         elos[gm['TID']] += final_elo_update
         elos[gm['OID']] -= final_elo_update
         wdf.loc[idx, ['T_Elo', 'O_Elo']] = [elos[gm['TID']], elos[gm['OID']]]
@@ -564,6 +564,7 @@ def calcElo(df, K=35, margin=4.5):
     wdf2['TID'], wdf2['OID'] = wdf['OID'], wdf['TID']
     wdf2['T_Elo'], wdf2['O_Elo'] = wdf['O_Elo'], wdf['T_Elo']
     wdf = wdf.append(wdf2, ignore_index=True)
+    wdf = wdf.drop(columns=['WLoc', 'ScoreDiff'])
     wdf.to_csv('elo_file.csv', index=False)
     return wdf
 
@@ -580,7 +581,7 @@ Returns:
 '''
 def addElos(df):
     rdf = pd.read_csv('elo_file.csv')
-    df = df.merge(rdf, on=['GameID', 'TID', 'OID'])
+    df = df.merge(rdf, on=['Season', 'TID', 'OID', 'DayNum'])
     return df
 
 '''

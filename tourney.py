@@ -146,20 +146,27 @@ class Bracket(object):
     Returns:
         poss_games: DataFrame - frame with team IDs and probabilities of winning.
     """
-    def runAll(self, classifier, fc):
-        matches = [[x, y] for (x, y) in combinations(fc.getIndex(pd.Index([self.season])).index.get_level_values(1), 2)]
-        poss_games = pd.DataFrame(data=matches, columns=['T', 'O'])
+    def runAll(self, sts, trans, cf):
+        tids = list(set(self.truth['StrongSeed'].values) | set(self.truth['WeakSeed'].values))
+        matches = [[x, y] for (x, y) in combinations(tids, 2)]
+        poss_games = pd.DataFrame(data=matches, columns=['TID', 'OID'])
         poss_games['Season'] = self.season
-        vector = fc.g_transform.transform(fc.getIndex(poss_games.set_index(['Season', 'T']).index).values - \
-            fc.getIndex(poss_games.set_index(['Season', 'O']).index).values)
-        gm_res = classifier.predict(vector)
-        prob = classifier.predict_proba(vector)
+        p1 = poss_games.copy()
+        p1['TID'], p1['OID'] = poss_games['OID'], poss_games['TID']
+        poss_games = poss_games.append(p1)
+        poss_games = poss_games.set_index(['GameID', 'Season', 'TID', 'OID'])
+        ttl = pd.DataFrame(index=poss_games.index).merge(sts, 
+                                            left_on=['Season', 'OID'], 
+                                            right_on=['Season', 'TID'], 
+                                            right_index=True)
+        X = ttl.groupby(['GameID']).diff().fillna(0) + ttl.groupby(['GameID']).diff(periods=-1).fillna(0)
+        probs = cf.predict(trans.transform(X))
         poss_games['Winner'] = [i[gm_res[n]] for n, i in enumerate(matches)]
         poss_games['W%'] = np.max(prob, axis=1)
         p1 = poss_games.copy()
         p1['T'], p1['O'] = poss_games['O'], poss_games['T']
         p1['W%'] = 1 - poss_games['W%']
-        poss_games = poss_games.append(p1, ignore_index=True)
+        poss_games = poss_games.append(p1)
         return poss_games
         
     

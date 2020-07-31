@@ -65,13 +65,13 @@ def classify(X, y, cl, cv=None):
 def proprietaryFeats(X):
     Xt = pd.DataFrame()
     #Tournament offense measure
-    cols = ['T_Score', 'T_FGM', 'T_FG%', 'T_PPS', 'T_eFG%', 'T_TS%', 'T_OffRat', 'T_GameScore']
-    means = np.array([ 69.49013453,  24.59596413,   0.43763814,   0.99341058,
-         0.49670529,   0.53726438, 109.89510644,  55.40504212])
-    stds = np.array([11.9804552 ,  4.75260377,  0.07539385,  0.17392086,  0.08696043,
-        0.08189926, 16.45710437,  5.0516743 ])
-    lambdas = np.array([0.57941522, 0.39628254, 0.0207777 , 0.37880789, 0.06679493,
-       0.93635365, 1.00223   , 0.49847729])
+    cols = ['T_Score', 'T_FG%', 'T_PPS', 'T_eFG%', 'T_TS%', 'T_OffRat', 'T_GameScore']
+    means = np.array([ 69.49013453, 0.43763814, 0.99341058,
+         0.49670529, 0.53726438, 109.89510644, 55.40504212])
+    stds = np.array([11.9804552, 0.07539385, 0.17392086, 0.08696043,
+        0.08189926, 16.45710437, 5.0516743 ])
+    lambdas = np.array([0.57941522, 0.0207777, 0.37880789, 0.06679493,
+       0.93635365, 1.00223, 0.49847729])
     #Remove mean and standard deviation
     for n, c in enumerate(cols):
         Xt[c] = (X[c] - means[n]) / stds[n]
@@ -79,13 +79,13 @@ def proprietaryFeats(X):
         if lambdas[n] != 0:
             Xt.loc[Xt[c] >= 0, c] = ((Xt.loc[Xt[c] >= 0, c] + 1)**lambdas[n] - 1) / lambdas[n]
         else:
-            Xt.loc[Xt[c] >= 0, c] = np.log(Xt.loc[Xt[c] >= 0, c] + 1)
+            Xt.loc[Xt[c] >= 0, c] = np.log10(Xt.loc[Xt[c] >= 0, c] + 1)
         if lambdas[n] != 2:
             Xt.loc[Xt[c] < 0, c] = -((-Xt.loc[Xt[c] < 0, c] + 1)**(2 - lambdas[n]) - 1) / (2 - lambdas[n])
         else:
-            Xt.loc[Xt[c] < 0, c] = -np.log(-Xt.loc[Xt[c] < 0, c] + 1)
+            Xt.loc[Xt[c] < 0, c] = -np.log10(-Xt.loc[Xt[c] < 0, c] + 1)
     Xt['TourneyOffenseRat'] = np.mean(Xt, axis=1) * 50 / 3 + 50
-    return Xt
+    return Xt['TourneyOffenseRat']
         
 class seasonalCV(object):
     def __init__(self, seasons):

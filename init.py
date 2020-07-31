@@ -21,5 +21,8 @@ print('Calculating system weights...')
 weights = st.calcSystemWeights(files)
 print('Calculating rankings...')
 ranks = st.getRanks(df, files)
+print('Calculating influence stats...')
+df = st.joinFrame(df, st.getStats(df))
+influence = st.getInfluenceStats(df, recalc=True)
 
 final_df = fl.arrangeFrame(files)

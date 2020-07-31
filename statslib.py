@@ -9,6 +9,7 @@ import pandas as pd
 import os
 from tqdm import tqdm
 from scipy.linalg import solve
+from scipy.interpolate import CubicSpline
 from scipy.stats import hmean
 import statsmodels.api as sm
 from sklearn.preprocessing import RobustScaler
@@ -250,6 +251,8 @@ def getStats(df):
     wdf['T_FT/A'] = df['T_FTA'] / df['T_FGA']
     wdf['T_FT%'] = df['T_FTM'] / df['T_FTA']
     wdf['T_TO%'] = df['T_TO'] / wdf['T_Poss']
+    wdf['T_ExtraPoss'] = df['T_OR'] + df['T_Stl'] + df['O_PF']
+    wdf['O_ExtraPoss'] = df['O_OR'] + df['O_Stl'] + df['T_PF']
      
     wdf['O_FG%'] = df['O_FGM'] / df['O_FGA']
     wdf['O_PPS'] = (df['O_Score'] - df['O_FTM']) / df['O_FGA']
@@ -273,6 +276,7 @@ def getStats(df):
     wdf['O_ProdPoss'] = wdf['O_Poss'] - df['O_TO'] - (df['O_FGA'] - df['O_FGM'] + .44 * df['O_FTM'])
     wdf['T_ProdPoss%'] = wdf['T_ProdPoss'] / wdf['T_Poss']
     wdf['O_ProdPoss%'] = wdf['O_ProdPoss'] / wdf['O_Poss']
+    
     
     return wdf.fillna(0)
 
@@ -438,9 +442,12 @@ def calcSystemWeights(files):
                     ranks = team['OrdinalRank'].values[0] * np.ones((wdf_diffs.loc[wdf_diffs['TID'] == tid].shape[0],))
                 else:
                     #Interpolate between system outputs to get a team's rank at the time of an actual game
-                    #This can be improved on, probably. Only using linear interpolation.
-                    ranks = np.interp(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'], 
-                                      team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
+                    #Linear interpolation
+                    # ranks = np.interp(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'], 
+                    #                   team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
+                    #Cubic spline
+                    ranks = CubicSpline(team['RankingDayNum'], team['OrdinalRank'])(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values)
+                    ranks[wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values < team['RankingDayNum'].values[0]] = team['OrdinalRank'].values[0]
                 wdf_diffs.loc[wdf_diffs['TID'] == tid, 'T_Rank'] = ranks
                 wdf_diffs.loc[wdf_diffs['OID'] == tid, 'O_Rank'] = ranks
             rdiff = wdf_diffs['T_Rank'] - wdf_diffs['O_Rank']
@@ -549,7 +556,7 @@ def calcElo(files, K=35, margin=4.5):
         #First, regression to the mean if the season is new
         if season != gm['Season']:
             for key in elos:
-                elos[key] = .25 * elos[key] + .75 * 1500
+                elos[key] = .15 * elos[key] + .85 * 1500
             season = gm['Season']
         #Elo calculation stolen from 538
         hc_adv = 100 if gm['WLoc'] == 'H' else -100 if gm['WLoc'] == 'A' else 0

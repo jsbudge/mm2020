@@ -14,34 +14,43 @@ import pandas as pd
 import statslib as st
 from itertools import combinations, permutations
 
-def arrangeFrame(files, scaling=None):
+def arrangeFrame(files, scaling=None, noraw=False):
     ts = st.getGames(files['MRegularSeasonDetailedResults']).drop(columns=['NumOT', 'GLoc'])
+    ty = ts['T_Score'] > ts['O_Score'] - 0
+    if noraw:
+        ts = st.joinFrame(ts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
+                          st.getStats(ts))
+    else:
+        ts = st.joinFrame(ts, st.getStats(ts))
     ts = st.addRanks(ts)
     ts = st.addElos(ts)
-    ts = st.joinFrame(ts, st.getStats(ts))
     ts = st.joinFrame(ts, st.getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
     tsdays = ts['DayNum']
     ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])
-    ty = ts['T_Score'] > ts['O_Score'] - 0
     if scaling is not None:
         ts = st.normalizeToSeason(ts, scaler=scaling)
     return ts, ty, tsdays
 
-def arrangeTourneyGames(files):
+def arrangeTourneyGames(files, noraw=False):
     tts = st.getGames(files['MNCAATourneyDetailedResults']).drop(columns=['NumOT', 'GLoc'])
-    tts = st.joinFrame(tts, st.getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])
+    tty = tts['T_Score'] > tts['O_Score'] - 0
+    if noraw:
+        tts = st.joinFrame(tts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
+                           st.getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])
+    else:
+        tts = st.joinFrame(tts, st.getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])
     ttsdays = tts['DayNum']
     tts = tts.drop(columns=['DayNum'])
-    tty = tts['T_Score'] > tts['O_Score'] - 0
     return tts, tty, ttsdays
 
-def loadGames(sts, game_idx):
-    ttl = pd.DataFrame(index=game_idx).merge(sts, 
+def loadGames(sts, games):
+    ttl = pd.DataFrame(index=games.index).merge(sts, 
                                             left_on=['Season', 'OID'], 
                                             right_on=['Season', 'TID'], 
-                                            right_index=True).sort_index(level=0)
+                                            right_index=True)
+    y = (games['T_Score'] - games['O_Score']) > 0
     X = ttl.groupby(['GameID']).diff().fillna(0) + ttl.groupby(['GameID']).diff(periods=-1).fillna(0)
-    return X
+    return X.sort_index(), y.sort_index()
 
 def splitGames(X, y, split=None, as_frame=False):
     X = X.sort_index(); y = y.sort_index()
@@ -52,9 +61,9 @@ def splitGames(X, y, split=None, as_frame=False):
             s = X.index.get_level_values(1) == split
             train = np.logical_not(s); test = s
         except:
-            train, test = next(split.split(X, y))
-            train = [s in train for s in range(X.shape[0])]
-            test = [s in test for s in range(X.shape[0])]
+            tr, te = next(split.split(X, y))
+            train = [s in tr for s in range(X.shape[0])]
+            test = [s in te for s in range(X.shape[0])]
         if as_frame:
             return X.loc[train], y[train], X.loc[test], y[test]
         else:

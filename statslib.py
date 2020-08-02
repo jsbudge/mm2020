@@ -390,6 +390,15 @@ def loadTeamNames(file_dict):
         ret[row['TeamID']] = row['TeamName']
         ret[row['TeamName']] = row['TeamID']
     return ret
+
+def loadPlayerNames(files):
+    df = pd.read_csv(files['MPlayers'])
+    df['FullName'] = df['FirstName'] + ' ' + df['LastName']
+    ret = {}
+    for idx, row in df.iterrows():
+        ret[row['PlayerID']] = row['FullName']
+        ret[row['FullName']] = row['PlayerID']
+    return ret
     
 '''
 getSystemWeights

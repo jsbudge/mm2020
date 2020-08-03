@@ -12,59 +12,33 @@ Mostly, rosters and coach data.
 
 import numpy as np
 import pandas as pd
-import tqdm as tqdm
+from tqdm import tqdm
 
 def getRosters(files, season):
-    events = pd.read_csv(files['MEvents{}'.format(season)])
+    ev = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
+    mins = ev.groupby(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).apply(lambda x: sum(x.loc[x['EventSubType'] == 'out', 'ElapsedSeconds']) - sum(x.loc[x['EventSubType'] == 'in', 'ElapsedSeconds']))
+    mins.loc[mins < 0] += 2400
+    ev['Pivot'] = 1
+    ev = ev.pivot_table(index=ev.index, columns=['EventType', 'EventSubType'], values='Pivot', aggfunc=sum).fillna(0)
+    ev.index = pd.MultiIndex.from_tuples(ev.index)
+    evst = pd.DataFrame(index=ev.index)
     players = pd.read_csv(files['MPlayers'])
-    rdata = pd.DataFrame(columns=['TID', 'OID', 'DayNum', 'Season'])
-    pdata = pd.DataFrame(columns=['PlayerID', 'GameID', 'Ast', 'Blk', 'Stl', 'Foul', 'Tech', 'TO', 'OR', 'DR', 'FTM', 'FTA',
-                                  'FGM', 'FGA', 'DriveM', 'DriveA', 'DunkM', 'DunkA', 'FGM2',
-                                  'FGA2', 'FGM3', 'FGA3', 'Pull3A', 'Pull3M'])
     gameID = 0
-    for idx, grp in tqdm(events.groupby(['Season', 'DayNum', 'WTeamID', 'LTeamID'])):
-        grp = grp.loc[grp['EventPlayerID'] != 0]
-        gf = pd.DataFrame(columns=pdata.columns)
-        gf['PlayerID'] = list(set(grp['EventPlayerID']))
-        gf['GameID'] = gameID
-        gf = gf.fillna(0)
-        for p_idx, play in grp.groupby(['EventPlayerID']):
-            if p_idx == 0:
-                continue
-            i = gf.loc[gf['PlayerID'] == p_idx].index[0]
-            gf.loc[i, 'Ast'] = play.loc[play['EventType'] == 'assist'].shape[0]
-            gf.loc[i, 'Blk'] = play.loc[play['EventType'] == 'block'].shape[0]
-            gf.loc[i, 'Stl'] = play.loc[play['EventType'] == 'steal'].shape[0]
-            gf.loc[i, 'Foul'] = play.loc[play['EventType'] == 'foul'].shape[0]
-            gf.loc[i, 'TO'] = play.loc[play['EventType'] == 'turnover'].shape[0]
-            gf.loc[i, 'Tech'] = play.loc[play['EventSubType'] == 'tech'].shape[0]
-            gf.loc[i, 'OR'] = play.loc[play['EventSubType'] == 'off'].shape[0]
-            gf.loc[i, 'DR'] = play.loc[play['EventSubType'] == 'def'].shape[0]
-            
-            s3 = play.loc[np.logical_or(play['EventType'] == 'made3',
-                                         play['EventType'] == 'miss3')]
-            s2 = play.loc[np.logical_or(play['EventType'] == 'made2',
-                                         play['EventType'] == 'miss2')]
-            s1 = play.loc[np.logical_or(play['EventType'] == 'made1',
-                                         play['EventType'] == 'miss1')]
-            if s3.shape[0] > 0:
-                gf.loc[i, 'FGA3'] = s3.shape[0]
-                gf.loc[i, 'FGM3'] = s3.loc[s3['EventType'] == 'made3'].shape[0]
-                gf.loc[i, 'Pull3M'] = sum(np.logical_and(s3['EventType'] == 'made3',
-                                                     s3['EventSubType'] == 'pullu'))
-                gf.loc[i, 'Pull3A'] = s3.loc[s3['EventSubType'] == 'pullu'].shape[0]
-            if s2.shape[0] > 0:
-                gf.loc[i, 'FGA2'] = s2.shape[0]
-                gf.loc[i, 'FGM2'] = s2.loc[s2['EventType'] == 'made2'].shape[0]
-                gf.loc[i, 'DriveA'] = s2.loc[s2['EventSubType'] == 'drive'].shape[0]
-                gf.loc[i, 'DunkA'] = s2.loc[s2['EventSubType'] == 'dunk'].shape[0]
-                gf.loc[i, 'DriveM'] = sum(np.logical_and(s2['EventType'] == 'made2',
-                                                     s2['EventSubType'] == 'drive'))
-                gf.loc[i, 'DunkM'] = sum(np.logical_and(s2['EventType'] == 'made2',
-                                                     s2['EventSubType'] == 'dunk'))
-            gf.loc[i, 'FTA'] = s1.shape[0]
-            gf.loc[i, 'FTM'] = s1.loc[s1['EventType'] == 'made1'].shape[0]
-        pdata = pdata.append(gf, ignore_index=True)
-        gameID += 1
-    pdata = pdata.set_index(['GameID', 'PlayerID'])
-    pdata['Pts'] = pdata['FGM3'] * 3 + pdata['FGM2'] * 2 + pdata['FTM']
+    evst['Ast'] = ev['assist']
+    evst['Blk'] = ev['block']
+    evst['Foul'] = ev['foul'].sum(axis=1)
+    evst['TO'] = ev['turnover'].sum(axis=1)
+    evst['Stl'] = ev['steal']
+    evst['FGM3'] = ev['made3'].sum(axis=1)
+    evst['FGA3'] = ev['made3'].sum(axis=1) + ev['miss3'].sum(axis=1)
+    evst['FGM2'] = ev['made2'].sum(axis=1)
+    evst['FGA2'] = ev['made2'].sum(axis=1) + ev['miss2'].sum(axis=1)
+    evst['FTM'] = ev['made1'].sum(axis=1)
+    evst['FTA'] = ev['made1'].sum(axis=1) + ev['miss1'].sum(axis=1)
+    evst['DriveM'] = ev['made2', 'lay']
+    evst['DriveA'] = ev['made2', 'lay'] + ev['miss2', 'lay']
+    evst['DunkM'] = ev['made2', 'dunk']
+    evst['DunkA'] = ev['made2', 'dunk'] + ev['miss2', 'dunk']
+    evst['Pts'] = evst['FGM3'] * 3 + evst['FGM2'] * 2 + evst['FTM']
+    evst['Mins'] = mins / 60
+    return evst

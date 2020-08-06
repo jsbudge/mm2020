@@ -69,8 +69,10 @@ def splitGames(X, y, split=None, as_frame=False):
         else:
             return X.loc[train].values, y[train].values, X.loc[test].values, y[test].values
         
-def getAllMatches(X, sts, season):
-    teams = list(set(X.loc(axis=0)[:, season, :, :].index.get_level_values(2)))
+def getAllMatches(files, sts, season, transform=None):
+    sd = pd.read_csv(files['MNCAATourneySeeds'])
+    sd = sd.loc[sd['Season'] == season]['TeamID'].values
+    teams = list(set(sd))
     matches = [[x, y] for (x, y) in permutations(teams, 2)]
     poss_games = pd.DataFrame(data=matches, columns=['TID', 'OID'])
     poss_games['Season'] = season; poss_games['GameID'] = np.arange(poss_games.shape[0])
@@ -83,7 +85,12 @@ def getAllMatches(X, sts, season):
                                             left_on=['Season', 'TID'], 
                                             right_on=['Season', 'OID'], 
                                             right_index=True).sort_index(level=0)
-    return ttw - ttl
+    if transform is None:
+        return ttw - ttl
+    else:
+        return pd.DataFrame(index=ttw.index, 
+                            columns=ttw.columns, 
+                            data=transform.transform(ttw-ttl))
 
 def merge(*args):
     df = None

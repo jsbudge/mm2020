@@ -10,6 +10,7 @@ Stores all of our classes and objects for data manipulation.
 import numpy as np
 import pandas as pd
 import statslib as st
+from framelib import getAllMatches
 from sklearn.metrics import log_loss
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold
@@ -17,7 +18,7 @@ from itertools import combinations
 from sklearn.pipeline import Pipeline, FeatureUnion
 
 class Bracket(object):
-    def __init__(self, season, files):
+    def __init__(self, season, files, team_features):
         seeds = pd.read_csv(files['MNCAATourneySeeds'])
         seeds = seeds.loc[seeds['Season'] == season]
         slots = pd.read_csv(files['MNCAATourneySlots'])
@@ -62,6 +63,8 @@ class Bracket(object):
         self.truth = truth
         self.tnames = st.loadTeamNames(files)
         self.isBuilt = False
+        self.feats = team_features
+        self.files = files
         
     def __str__(self):
         order = ['W', 'X', 'Y', 'Z']
@@ -111,16 +114,16 @@ class Bracket(object):
         classifier: sklearn model with predict() and predict_proba() function call.
         fc: FeatureCreator - prepped FeatureCreator.
     """
-    def run(self, classifier, ag):
+    def run(self, classifier, transform=None):
+        ag = getAllMatches(self.files, self.feats, self.season, transform=transform)
+        gm = pd.DataFrame(index=ag.index, data=classifier.predict(ag))
         for idx in range(self.structure.shape[0]):
             row = self.structure.iloc[idx]
-            gm = ag.loc(axis=0)[:, self.season, row['StrongSeed'], row['WeakSeed']]
-            gm_res = classifier.predict(gm)
-            prob = classifier.predict_proba(gm)
-            winner = row['StrongSeed'] if gm_res else row['WeakSeed']
+            gm_res = gm.loc(axis=0)[:, self.season, row['StrongSeed'], row['WeakSeed']].values[0]
+            winner = row['StrongSeed'] if gm_res[0] > .5 else row['WeakSeed']
             self.structure.loc[self.structure['Slot'] == row['Slot'], 
                                ['Winner', 'StrongSeed%', 'WeakSeed%']] = \
-                                   [winner, prob[0][1], prob[0][0]]
+                                   [winner, gm_res[0], gm_res[1]]
             if row['Slot'] in self.structure['StrongSeed'].values:
                 self.structure.loc[self.structure['StrongSeed'] == row['Slot'], 'StrongSeed'] = winner
             else:

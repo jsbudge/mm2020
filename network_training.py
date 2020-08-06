@@ -49,7 +49,6 @@ from tensorflow.keras import layers
 # split_yr = 2018
 files = st.getFiles()
 cv = feat.seasonalCV(np.arange(2004, 2020))
-nodes = 500
 trans = None
 finfo = SelectPercentile(score_func=f_classif, percentile=25)
 
@@ -62,6 +61,7 @@ sts = fl.merge(st.getSeasonalStats(fc[0], strat='elo'),
                ts[['T_Seed', 'T_FinalElo', 'T_FinalRank']])
 
 #%%
+nodes = 650
 gc, gc_y = fl.loadGames(sts, ftc[0])
 pipe = make_pipeline(VarianceThreshold(),
                     StandardScaler()).fit(gc, gc_y)
@@ -123,5 +123,6 @@ plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['train', 'test'], loc='upper left')
 
-bracket = Bracket(2019, files)
-bracket.run()
+bracket = Bracket(2019, files, sts)
+bracket.run(model, pipe)
+bracket.printTree('./test.txt')

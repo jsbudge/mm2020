@@ -30,13 +30,16 @@ def getFeatureInfo(X, y):
 
 def getFeatureSimilarityMatrix(X):
     temp = X.corr()
+    mtemp = pd.DataFrame(index=temp.index, columns=temp.columns, data=0)
+    comb = mtemp.copy()
     for n, col in enumerate(temp.columns):
         mx = X[col].values
-        m_score = mutual_info_regression(X, mx)
-        temp[col] = np.sqrt(temp[col].values**2 + (m_score / m_score[n])**2)
+        m_score = mutual_info_regression(X[X.columns[n:]], mx)
+        mtemp.loc[col, X.columns[n:]] = m_score / m_score[0]
+    mtemp = mtemp + mtemp.T
     #Scale to one
-    temp /= np.sqrt(2)
-    return temp
+    comb = np.sqrt(temp**2 + mtemp**2) / np.sqrt(2)
+    return temp, mtemp, comb
 
 def classify(X, y, cl, cv=None):
     if cv is None:

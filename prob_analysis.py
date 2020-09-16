@@ -24,52 +24,12 @@ files = st.getFiles()
 final_df = fl.arrangeFrame(files, scaling=PowerTransformer())
 unscale_df = fl.arrangeFrame(files)[0]#.loc(axis=0)[:, 2015, :, :]
 avdf = st.getSeasonalStats(unscale_df)
+names = st.loadTeamNames(files)
 
 sdf = final_df[0]#.loc(axis=0)[:, 2015, :, :]
 sdf = sdf.drop(columns=['T_Elo', 'O_Elo', 'T_Rank', 'O_Rank']) #Remove overall measures of team
 ssdf = sdf.drop(columns=['T_Score', 'O_Score'])
 tsdf = sdf[[s for s in sdf.columns if s[:2] == 'T_']]
-
-#%%
-'''
-Initial exploration
-
-We have a bunch of stats. Let's sort through them and remove those that
-are redundant in some way.
-'''
-#First, let's try getting some offense indicators; i.e., how good a team is at
-#generating offense.
-
-corrs = np.corrcoef(tsdf.T)
-tscore_coeff = corrs[tsdf.columns == 'T_Score', :].flatten()
-off_cols = tsdf.columns[tscore_coeff > .5]
-offsim = feat.getFeatureSimilarityMatrix(tsdf[off_cols])
-plt.figure('Off. Feature Similarity')
-plt.subplot(1, 3, 1)
-sns.heatmap(offsim[0])
-plt.title('Corr')
-plt.subplot(1, 3, 2)
-sns.heatmap(offsim[1])
-plt.title('MInfo')
-plt.subplot(1, 3, 3)
-sns.heatmap(offsim[2])
-plt.title('Comb')
-
-#...And defense...
-corrs = np.corrcoef(sdf.T)
-oscore_coeff = corrs[sdf.columns == 'T_ScoreShift', :].flatten()
-def_cols = sdf.columns[oscore_coeff < -.1]
-defsim = feat.getFeatureSimilarityMatrix(sdf[def_cols])
-plt.figure('Def. Feature Similarity')
-plt.subplot(1, 3, 1)
-sns.heatmap(defsim[0])
-plt.title('Corr')
-plt.subplot(1, 3, 2)
-sns.heatmap(defsim[1])
-plt.title('MInfo')
-plt.subplot(1, 3, 3)
-sns.heatmap(defsim[2])
-plt.title('Comb')
 
 #%%
 '''
@@ -86,7 +46,7 @@ plt.subplot(2, 1, 2)
 plt.plot(np.gradient(sig))
 
 ocorrs = np.corrcoef(U.T, unscale_df['T_Score'])[-1, :-1]
-dcorrs = np.corrcoef(U.T, unscale_df['T_ScoreShift'])[-1, :-1]
+dcorrs = np.corrcoef(U.T, unscale_df['O_Score'])[-1, :-1]
 
 plt.figure('Eig Corrs')
 plt.plot(abs(ocorrs))
@@ -96,14 +56,53 @@ plt.plot(abs(dcorrs))
 # plt.plot(U[0, :])
 # plt.plot(eigdf.iloc[0].dot(np.linalg.pinv(Vt)).dot(np.linalg.pinv(np.diag(sig))))
 
-oedf = pd.DataFrame(index=sdf.index, data=U[:, abs(ocorrs) > .1])
-dedf = pd.DataFrame(index=sdf.index, data=U[:, abs(dcorrs) > .1])
+oedf = pd.DataFrame(index=sdf.index, columns=np.arange(len(ocorrs))[abs(ocorrs) > .1], data=U[:, abs(ocorrs) > .1])
+dedf = pd.DataFrame(index=sdf.index, columns=np.arange(len(dcorrs))[abs(dcorrs) > .1], data=U[:, abs(dcorrs) > .1])
 
+plt.figure('Histograms')
 for c in oedf.columns:
     hist, bins = np.histogram(oedf[c], bins='fd')
     plt.plot(bins[1:], hist)
     
 #As gaussian random variables, we can get a mean and variance and find the outliers in every feature
-oedf = (oedf - oedf.mean()) / oedf.std()
 omeans = oedf.groupby(['Season', 'TID']).mean()
+omeans = (omeans - omeans.mean()) / omeans.std()
+
+pltavdf = (avdf - avdf.mean()) / avdf.std()
+#Let's only keep the variables we think might show differences in offensive approach
+pltavdf = pltavdf[['T_Score', 'T_Ast', 'T_eFG%', 'T_Econ', 'T_Poss', 'T_FT/A', 'T_Ast%', 'T_3Two%', 'O_Elo', 'O_Rank']]
+plt.figure('Off. Measurables')
+grid_sz = np.ceil(np.sqrt(omeans.shape[1])).astype(int)
+for n, c in enumerate(omeans.columns):
+    pltavdf['Category'] = 0
+    pltavdf.loc[omeans[c] >= 1, 'Category'] = 1
+    pltavdf.loc[omeans[c] <= -1, 'Category'] = -1
+    plt.subplot(grid_sz, grid_sz, n+1)
+    sns.violinplot(x='variable', y='value', hue='Category', data=pltavdf.melt(id_vars=['Category']))
+    plt.xticks(rotation=45)
+    plt.title('O{}'.format(c))
     
+dmeans = dedf.groupby(['Season', 'TID']).mean()
+dmeans = (dmeans - dmeans.mean()) / dmeans.std()
+pltavdf = (avdf - avdf.mean()) / avdf.std()
+#Let's only keep the variables we think might show differences in defensive approach
+pltavdf = pltavdf[['O_Score', 'O_Ast', 'T_R%', 'O_PF', 'O_ProdPoss%', 'O_eFG%', 'O_Elo', 'O_Rank']]
+plt.figure('Def. Measurables')
+grid_sz = np.ceil(np.sqrt(dmeans.shape[1])).astype(int)
+for n, c in enumerate(dmeans.columns):
+    pltavdf['Category'] = 0
+    pltavdf.loc[dmeans[c] >= 1, 'Category'] = 1
+    pltavdf.loc[dmeans[c] <= -1, 'Category'] = -1
+    plt.subplot(grid_sz, grid_sz, n+1)
+    sns.violinplot(x='variable', y='value', hue='Category', data=pltavdf.melt(id_vars=['Category']))
+    plt.xticks(rotation=45)
+    plt.title('D{}'.format(c))
+    
+#Let's look at some specific stylistic differences between teams
+#OFFENSIVE STYLES
+plt.figure('Offensive Style')
+bsc = omeans.loc[[i in [names['Gonzaga'], names['St Mary\'s CA'], names['N Kentucky']] for i in omeans.index.get_level_values(1)]].loc(axis=0)[2019, :]
+fast = omeans.loc[[i in [names['North Carolina'], names['Buffalo'], names['Belmont'], names['Duke']] for i in omeans.index.get_level_values(1)]].loc(axis=0)[2019, :]
+slow = omeans.loc[[i in [names['Virginia'], names['St Mary\'s CA'], names['Virginia Tech'], names['Liberty']] for i in omeans.index.get_level_values(1)]].loc(axis=0)[2019, :]
+sns.scatterplot(x='variable', y='value', data=fast.melt())
+sns.scatterplot(x='variable', y='value', data=slow.melt())

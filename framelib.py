@@ -25,9 +25,9 @@ def arrangeFrame(files, scaling=None, noraw=False):
     ts = st.addRanks(ts)
     ts = st.addElos(ts)
     ts = ts.set_index(['GameID', 'Season', 'TID', 'OID'])
-    #ts = st.joinFrame(ts, st.getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
+    ts = st.joinFrame(ts, st.getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
     tsdays = ts['DayNum']
-    ts = ts.drop(columns=['DayNum'])
+    ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])
     if scaling is not None:
         ts = st.normalizeToSeason(ts, scaler=scaling)
     return ts, ty, tsdays

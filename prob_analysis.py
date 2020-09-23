@@ -13,11 +13,17 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import statslib as st
+from tqdm import tqdm
+from itertools import combinations
 import framelib as fl
 import featurelib as feat
 import seaborn as sns
-from sklearn.preprocessing import StandardScaler, PowerTransformer, PolynomialFeatures
+from sklearn.preprocessing import StandardScaler, PowerTransformer, PolynomialFeatures, OneHotEncoder
 import sklearn.cluster as clustering
+import sklearn.linear_model as reg
+import sklearn.neural_network as nn
+import sklearn.decomposition as decomp
+from sklearn.model_selection import StratifiedKFold, GridSearchCV, train_test_split
 
 
 def runProbs(p, gr, val):
@@ -34,7 +40,7 @@ def runProbs(p, gr, val):
 plt.close('all')
 
 files = st.getFiles()
-final_df = fl.arrangeFrame(files, scaling=StandardScaler())
+final_df = fl.arrangeFrame(files, scaling=PowerTransformer())
 unscale_df = fl.arrangeFrame(files)[0]#.loc(axis=0)[:, 2015, :, :]
 tdf, twin, _ = fl.arrangeTourneyGames(files)
 ttdf = st.getTourneyStats(tdf, unscale_df, files)
@@ -47,12 +53,13 @@ ssdf = sdf.drop(columns=['T_Score', 'O_Score'])
 tsdf = sdf[[s for s in sdf.columns if s[:2] == 'T_']]
 
 #%%
+plt.close('all')
 '''
 OFFENSIVE INDICATORS
 '''
 
 #Initial testing: we have our significant variables, let's try to reduce them to something useful.
-eigdf = tsdf.drop(columns=['T_Score', 'T_ScoreShift'])
+eigdf = tsdf.drop(columns=['T_Score'])
 U, sig, Vt = np.linalg.svd(eigdf, full_matrices=False)
 plt.figure('Eigs')
 plt.subplot(2, 1, 1)
@@ -60,18 +67,23 @@ plt.plot(sig)
 plt.subplot(2, 1, 2)
 plt.plot(np.gradient(sig))
 
+sig[34:] = 0
+U, sig, Vt = np.linalg.svd(U.dot(np.diag(sig)).dot(Vt), full_matrices=False)
+
 ocorrs = np.corrcoef(U.T, unscale_df['T_Score'])[-1, :-1]
 dcorrs = np.corrcoef(U.T, unscale_df['T_ScoreShift'])[-1, :-1]
+rcorrs = np.zeros((len(ocorrs),)) #np.corrcoef(U.T, unscale_df['T_Elo'] - unscale_df['O_Elo'])[-1, :-1]
 
 plt.figure('Eig Corrs')
 plt.plot(abs(ocorrs))
 plt.plot(abs(dcorrs))
+plt.plot(abs(rcorrs))
 
 # plt.figure()
 # plt.plot(U[0, :])
 # plt.plot(eigdf.iloc[0].dot(np.linalg.pinv(Vt)).dot(np.linalg.pinv(np.diag(sig))))
-oeigs = np.logical_and(abs(ocorrs) > abs(dcorrs), abs(ocorrs) > .1)
-deigs = np.logical_and(abs(dcorrs) > abs(ocorrs), abs(dcorrs) > .1)
+oeigs = np.logical_and(abs(rcorrs) < .2, np.logical_and(abs(ocorrs) > abs(dcorrs), abs(ocorrs) > .1))
+deigs = np.logical_and(abs(rcorrs) < .1, np.logical_and(abs(dcorrs) > abs(ocorrs), abs(dcorrs) > .1))
 oedf = pd.DataFrame(index=sdf.index, columns=np.arange(len(ocorrs))[oeigs], data=U[:, oeigs])
 oedf = oedf.rename(columns=lambda x: 'O{}'.format(x))
 oedf = st.normalizeToSeason(oedf, scaler=StandardScaler()) * 16.666 + 50
@@ -101,8 +113,8 @@ plt.figure('Off. Measurables')
 grid_sz = np.ceil(np.sqrt(omeans.shape[1])).astype(int)
 for n, c in enumerate(omeans.columns):
     pltavdf['Category'] = 0
-    pltavdf.loc[omeans[c] >= 67, 'Category'] = 1
-    pltavdf.loc[omeans[c] <= 33, 'Category'] = -1
+    pltavdf.loc[omeans[c] >= omeans[c].mean() + omeans[c].std(), 'Category'] = 1
+    pltavdf.loc[omeans[c] <= omeans[c].mean() - omeans[c].std(), 'Category'] = -1
     plt.subplot(grid_sz, grid_sz, n+1)
     sns.violinplot(x='variable', y='value', hue='Category', data=pltavdf.melt(id_vars=['Category']))
     plt.xticks(rotation=45)
@@ -115,8 +127,8 @@ plt.figure('Def. Measurables')
 grid_sz = np.ceil(np.sqrt(dmeans.shape[1])).astype(int)
 for n, c in enumerate(dmeans.columns):
     pltavdf['Category'] = 0
-    pltavdf.loc[dmeans[c] >= 67, 'Category'] = 1
-    pltavdf.loc[dmeans[c] <= 33, 'Category'] = -1
+    pltavdf.loc[dmeans[c] >= dmeans[c].mean() + dmeans[c].std(), 'Category'] = 1
+    pltavdf.loc[dmeans[c] <= dmeans[c].mean() - dmeans[c].std(), 'Category'] = -1
     plt.subplot(grid_sz, grid_sz, n+1)
     sns.violinplot(x='variable', y='value', hue='Category', data=pltavdf.melt(id_vars=['Category']))
     plt.xticks(rotation=45)
@@ -153,19 +165,22 @@ for n in range(stackdf.shape[1]):
     plt.title(stackdf.columns[n])
 plt.legend(['Loss', 'Win'], loc='lower right')
 
-# for yr in range(2003, 2020):
-#     try:
-#         byuprobs = np.sum(runProbs(stackdf, gr, stackdf.loc(axis=0)[yr, names['St Mary\'s CA']].values[0, :]), axis=1)
-#         byuprobs = byuprobs / sum(byuprobs)
-#         print('{}: {} GP, {:.2f}%'.format(yr, np.arange(7)[byuprobs == byuprobs.max()][0], byuprobs[byuprobs == byuprobs.max()][0] * 100))
-#     except:
-#         print('Missed {}'.format(yr))
-    
-#Let's look at some specific stylistic differences between teams
-#OFFENSIVE STYLES
-test = omeans['O0'] > 60
-plt.figure('ShiftDist')
-sns.kdeplot(avdf.loc[test, 'T_Score'])
-sns.kdeplot(avdf.loc[np.logical_not(test), 'T_Score'])
+kmns = clustering.KMeans(n_clusters=10).fit_predict(omeans)
+combs = [(i, j, k) for i, j, k in combinations(omeans.columns, 3)]
+grid_sz = np.ceil(np.sqrt(len(combs))).astype(int)
+plt.figure('Clusters')
+for g, co in enumerate(combs):
+    ax = plt.subplot(grid_sz, grid_sz, g+1, projection='3d')
+    ax.set_title(co[0] + ', ' + co[1] + ', ' + co[2])
+    for k in range(0, max(list(set(kmns)))+1):
+        ax.scatter(omeans.loc[kmns == k, co[0]], omeans.loc[kmns == k, co[1]], omeans.loc[kmns == k, co[2]])
+        
+teamdf = omeans.join(dmeans, on=['Season', 'TID']).join(avdf, on=['Season', 'TID'])
+teamdf['Cluster'] = kmns
 
-
+#Let's look at overall team stuff now. Interaction features, to start out with
+# eiginterdf = oedf.join(dedf).groupby(['GameID']).diff().dropna()
+# interdf = -st.getDiffs(unscale_df).merge(eiginterdf, left_on=['GameID', 'Season', 'TID'], right_on=['GameID', 'Season', 'TID'])
+# U, sig, Vt = np.linalg.svd(interdf, full_matrices=False)
+# sig[10:] = 0
+# smooth_interdf = pd.DataFrame(index=interdf.index, columns=interdf.columns, data=U.dot(np.diag(sig)).dot(Vt))

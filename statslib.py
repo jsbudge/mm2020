@@ -178,7 +178,10 @@ def getDiffs(df):
     ret = pd.DataFrame()
     for col in df.columns:
         if col[:2] == 'T_':
-            ret[col[2:] + '_diff'] = df['T_' + col[2:]] - df['O_' + col[2:]]
+            try:
+                ret[col[2:] + '_diff'] = df['T_' + col[2:]] - df['O_' + col[2:]]
+            except:
+                ret[col[2:]] = df['T_' + col[2:]]
         elif col[:2] == 'O_':
             continue
         else:

@@ -14,6 +14,12 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+'''
+Gets stats for every player in every game.
+Note that the player IDs do not match the MPlayerID file, for some reason.
+THe stats themselves are correct for the ID, though, cross-checked
+against sports-reference.com.
+'''
 def getRosters(files, season):
     evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
     evp = evp.loc[evp.index.get_level_values(3) != 0]
@@ -21,8 +27,6 @@ def getRosters(files, season):
     ev = evp.pivot_table(index=evp.index, columns=['EventType', 'EventSubType'], values='Pivot', aggfunc=sum).fillna(0)
     ev.index = pd.MultiIndex.from_tuples(ev.index)
     evst = pd.DataFrame(index=ev.index)
-    players = pd.read_csv(files['MPlayers'])
-    gameID = 0
     evst['Ast'] = ev['assist']
     evst['Blk'] = ev['block']
     evst['Foul'] = ev['foul'].sum(axis=1)
@@ -87,11 +91,20 @@ def getAdvStats(df):
 def getPlayerSeasonStats(df):
     return df.groupby(['PlayerID']).mean()
 
+'''
+THESE ARE NOT CORRECT.
+'''
 def loadPlayerNames(files):
     df = pd.read_csv(files['MPlayers'])
     df['FullName'] = df['FirstName'] + ' ' + df['LastName']
     ret = {}
     for idx, row in df.iterrows():
         ret[row['PlayerID']] = row['FullName']
-        ret[row['FullName']] = row['PlayerID']
+        if row['FullName'] in ret:
+            try:
+                ret[row['FullName']] = ret[row['FullName']] + [row['PlayerID']]
+            except:
+                ret[row['FullName']] = [ret[row['FullName']], row['PlayerID']]
+        else:
+            ret[row['FullName']] = row['PlayerID']
     return ret

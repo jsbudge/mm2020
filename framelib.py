@@ -14,7 +14,7 @@ import pandas as pd
 import statslib as st
 from itertools import combinations, permutations
 
-def arrangeFrame(files, scaling=None, noraw=False):
+def arrangeFrame(files, scaling=None, noraw=False, noinfluence=False):
     ts = st.getGames(files['MRegularSeasonDetailedResults']).drop(columns=['NumOT', 'GLoc'])
     ty = ts['T_Score'] > ts['O_Score'] - 0
     if noraw:
@@ -25,9 +25,10 @@ def arrangeFrame(files, scaling=None, noraw=False):
     ts = st.addRanks(ts)
     ts = st.addElos(ts)
     ts = ts.set_index(['GameID', 'Season', 'TID', 'OID'])
-    ts = st.joinFrame(ts, st.getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
     tsdays = ts['DayNum']
-    ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])
+    if not noinfluence:
+        ts = st.joinFrame(ts, st.getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
+        ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])
     if scaling is not None:
         ts = st.normalizeToSeason(ts, scaler=scaling)
     return ts, ty, tsdays

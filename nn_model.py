@@ -56,16 +56,18 @@ files = st.getFiles()
 nspl = 5
 scale = StandardScaler()
 cv = KFold(n_splits=nspl, shuffle=True)
-unscale_df = fl.arrangeFrame(files, scaling=scale, noinfluence=True)
+scale_df = fl.arrangeFrame(files, scaling=scale, noinfluence=True)
+unscale_df = fl.arrangeFrame(files, scaling=None, noinfluence=True)
 games = fl.arrangeTourneyGames(files, noraw=True)
-sdf = unscale_df[0]
+sdf = scale_df[0]
 score_diff = sdf['T_Score'] - sdf['O_Score']
-avdf = st.getSeasonalStats(sdf, strat='gausselo').drop(columns=['T_PythWin%', 'T_SoS'])
-avrelo = st.getSeasonalStats(sdf, strat='relelo').drop(columns=['T_PythWin%', 'T_SoS'])
-avrank = st.getSeasonalStats(sdf, strat='rank').drop(columns=['T_PythWin%', 'T_SoS'])
-av = st.getSeasonalStats(sdf, strat='mean').drop(columns=['T_PythWin%', 'T_SoS'])
+seasonal_stats = st.getSeasonalStats(unscale_df[0], seasonal_only=True).drop(columns=['T_SoS'])
+avdf = st.getSeasonalStats(sdf, strat='gausselo').drop(columns=['T_PythWin%', 'T_Win%']).merge(seasonal_stats, on=['Season', 'TID'])
+avrelo = st.getSeasonalStats(sdf, strat='relelo').drop(columns=['T_PythWin%', 'T_Win%']).merge(seasonal_stats, on=['Season', 'TID'])
+avrank = st.getSeasonalStats(sdf, strat='rank').drop(columns=['T_PythWin%', 'T_Win%']).merge(seasonal_stats, on=['Season', 'TID'])
+av = st.getSeasonalStats(sdf, strat='mean').drop(columns=['T_PythWin%', 'T_Win%']).merge(seasonal_stats, on=['Season', 'TID'])
+nstrats = 4
 #%%
-
 
 outcomes = OneHotEncoder(sparse=False).fit_transform(pd.DataFrame(data=games[1].values, index=games[0].index).sort_index().values + 0)
 
@@ -86,15 +88,14 @@ callbacks = [tf.keras.callbacks.EarlyStopping(
                     min_delta=0.0001,
                     cooldown=0,
                     min_lr=1e-10)]
-
-for frame in [('gausselo', avdf), ('relelo', avrelo),
-              ('rank', avrank), ('mean', av)]:
+av_loss = np.zeros((nstrats,)); av_acc = np.zeros((nstrats,))
+for m, frame in enumerate([('gausselo', avdf), ('relelo', avrelo),
+              ('rank', avrank), ('mean', av)]):
     print(frame[0])
     g1 = pd.DataFrame(index=games[0].index).sort_index().reset_index().merge(frame[1], on=['Season', 'TID'], how='left')
     g1 = g1.set_index(['GameID', 'TID']).drop(columns=['OID', 'Season'])
     g2 = pd.DataFrame(index=games[0].index).sort_index().reset_index().merge(frame[1], left_on=['Season', 'OID'], right_on=['Season', 'TID'], how='left')
     g2 = g2.set_index(['GameID', 'OID']).drop(columns=['TID', 'Season'])
-    av_loss = np.zeros((nspl,)); av_acc = np.zeros((nspl,))
     for n, (tt, ts) in enumerate(cv.split(g1)):
         model = compile_model(g1.shape[1], n_layers=20, layer_sz=100, optimizer='adam')
         Xt1, Xs1 = g1.iloc[tt], g1.iloc[ts]
@@ -103,8 +104,8 @@ for frame in [('gausselo', avdf), ('relelo', avrelo),
         h = model.fit([Xt1, Xt2], yt, epochs=450, validation_data=([Xs1, Xs2], ys),
                   callbacks=callbacks, verbose=0)
         mdl_loss, mdl_acc = model.evaluate([Xs1, Xs2], ys, verbose=0)
-        av_loss[n] += mdl_loss / nspl
-        av_acc[n] += mdl_acc / nspl
+        av_loss[m] += mdl_loss / nspl
+        av_acc[m] += mdl_acc / nspl
         print('\tFold {} complete.'.format(n))
     
 

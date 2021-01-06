@@ -32,27 +32,48 @@ from sklearn.feature_selection import f_regression, mutual_info_classif, SelectP
 from scipy.stats import multivariate_normal as mvn
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras.models import Model, load_model
 from tensorflow.keras import layers
+from keras.callbacks import TensorBoard
+from tensorflow.keras import backend as K
+from datetime import datetime
 plt.close('all')
 
 '''
 Compile keras model using the parameters listed.
 state_sz: the size of each feature vector to be used in training/prediction.
-n_layers: number of dense layers in model. Adds a dropout layer to ensure
-            no exploding gradients.
-layer_sz: size of each dense layer.
 optimizer: the optimization method for the model. Adam is the default,
             but there are plenty of others.
 '''
-def compile_model(state_sz, n_layers=5, layer_sz=50, optimizer='adam'):
+def compile_model(state_sz, optimizer='adam'):
     inp1 = keras.Input(shape=(state_sz,))
     inp2 = keras.Input(shape=(state_sz,))
     mdlconc = layers.Subtract()([inp1, inp2])
-    out = layers.Dense(layer_sz)(mdlconc)
-    for n in range(n_layers):
-        out = layers.Dense(layer_sz)(out)
-        out = layers.Dropout(.1)(out)
-    smax = layers.Dense(2, activation='softmax')(out)
+    out = layers.Dense(60, activation='relu')(mdlconc)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dropout(.3)(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.BatchNormalization()(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dropout(.3)(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dropout(.3)(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.BatchNormalization()(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dense(50, activation='relu')(out)
+    out = layers.Dropout(.3)(out)
+    out = layers.Dense(50, activation='relu')(out)
+    smax = layers.Dense(2, activation='softmax',
+                        name='output')(out)
     model = keras.Model(inputs=[inp1, inp2], outputs=smax)
     model.compile(optimizer=optimizer,
                   loss=['binary_crossentropy'],
@@ -109,7 +130,7 @@ prob_df = sdf.drop(columns=[c for c in sdf.columns if c[:1] == 'O'] + \
 pdf = prob_df.groupby(['GameID']).first() - prob_df.groupby(['GameID']).last()
 pdf = pdf.append(-pdf).sort_index().set_index(prob_df.sort_index().index)
 
-kpca = decomp.TruncatedSVD(n_components=15)
+kpca = decomp.TruncatedSVD(n_components=25)
 kpca.fit(pdf)
 ff = pd.DataFrame(index=pdf.index, data=kpca.transform(pdf)).groupby(['Season', 'TID']).mean()
 # plt.figure('KPCA Eigenvalues')
@@ -122,48 +143,31 @@ g1, g2, outcomes = get_frames(sdf.index, ff, scale_df[1])
 e1, e2, e_out = get_frames(games[0].index, ff, games[1])
 
 #%%
+K.clear_session()
 
+learn_rate = 1e-4
+num_epochs = 5000
 callbacks = [tf.keras.callbacks.EarlyStopping(
                     monitor="loss",
-                    min_delta=1e-3,
-                    patience=6,
+                    min_delta=1e-4,
+                    patience=200,
                     verbose=0,
                     mode="auto",
                     baseline=None,
                     restore_best_weights=True),
-                 tf.keras.callbacks.ReduceLROnPlateau(
-                    monitor="loss",
-                    factor=0.5,
-                    patience=2,
-                    verbose=0,
-                    mode="auto",
-                    min_delta=0.0001,
-                    cooldown=0,
-                    min_lr=1e-10)]
-av_loss = np.zeros((nspl,)); av_acc = np.zeros((nspl,))
-hists = {}
+            TensorBoard(histogram_freq=3, write_images=False,
+                        log_dir="logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S"))]
 
+opt_adam = keras.optimizers.Adam(learning_rate=learn_rate)
+model = compile_model(g1.shape[1], optimizer=opt_adam)
 
-for n, (tt, ts) in enumerate(cv.split(g1)):
-    model = compile_model(g1.shape[1], n_layers=20, layer_sz=100, optimizer='adam')
-    Xt1, Xs1 = g1.iloc[tt], g1.iloc[ts]
-    Xt2, Xs2 = g2.iloc[tt], g2.iloc[ts]
-    yt, ys = outcomes[tt], outcomes[ts]
-    hists[n] = model.fit([Xt1, Xt2], yt, epochs=30, validation_data=([Xs1, Xs2], ys),
-              callbacks=callbacks, verbose=1)
-    mdl_loss, mdl_acc = model.evaluate([e1, e2], e_out, verbose=0)
-    av_loss[n] = mdl_loss
-    av_acc[n] = mdl_acc
-    print('\tFold {} complete.'.format(n))
-
-plt.figure('Losses per fold')
-plt.subplot(211)
-for n in range(nspl):
-    plt.plot(hists[n].history['val_loss'])
-plt.subplot(212)
-for n in range(nspl):
-    plt.plot(hists[n].history['loss'])
-plt.legend(['{}'.format(m) for m in range(nspl)])
+t_pts, v_pts = next(cv.split(outcomes))
+Xt1, Xs1 = g1.iloc[t_pts], g1.iloc[v_pts]
+Xt2, Xs2 = g2.iloc[t_pts], g2.iloc[v_pts]
+yt, ys = outcomes[t_pts], outcomes[v_pts]
+hist = model.fit([Xt1, Xt2], yt, epochs=num_epochs, validation_data=([Xs1, Xs2], ys),
+          callbacks=callbacks, verbose=2, batch_size=400)
+model.evaluate([e1, e2], e_out)
 
 
 

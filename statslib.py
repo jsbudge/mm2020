@@ -344,7 +344,7 @@ def getSeasonalStats(df, strat='rank', seasonal_only=False):
         elif strat == 'elo':
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights=x['O_Elo'].values))
         elif strat == 'relelo':
-            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=(x['T_Elo'] - x['O_Elo']).values + 800))
+            data = dfapp.apply(lambda x: np.average(x, axis=0, weights= .1 / abs(x['T_Elo'] - x['O_Elo']).values**(1/4)))
         elif strat == 'gausselo':
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights=1 / (100 * np.sqrt(2 * np.pi)) * np.exp(-.5 * ((x['T_Elo'] - x['O_Elo']).values / 100)**2)))
         elif strat == 'hmean':

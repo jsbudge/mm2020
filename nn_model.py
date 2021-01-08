@@ -33,7 +33,7 @@ from scipy.stats import multivariate_normal as mvn
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model, load_model
-from tensorflow.keras import layers
+from tensorflow.keras import layers, regularizers
 from keras.callbacks import TensorBoard
 from tensorflow.keras import backend as K
 from tensorboard.plugins.hparams import api as hp
@@ -47,29 +47,39 @@ optimizer: the optimization method for the model. Adam is the default,
             but there are plenty of others.
 '''
 def compile_model(state_sz, layer_sz, n_layers, optimizer='adam', metrics=['accuracy']):
-    dropout_rate = .2
+    dropout_rate = .4
     inp1 = keras.Input(shape=(state_sz,))
     inp2 = keras.Input(shape=(state_sz,))
     mdlconc = layers.Subtract()([inp1, inp2])
     out = layers.Dense(layer_sz, activation='relu', name='init_dense')(mdlconc)
     for n in range(n_layers):
         out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_0'.format(n))(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_1'.format(n))(out)
+                           name='dense_{}_0'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1))(out)
         out = layers.Dropout(dropout_rate)(out)
         out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_2'.format(n))(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_3'.format(n))(out)
-        out = layers.BatchNormalization(name='bn_{}'.format(n))(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_4'.format(n))(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_5'.format(n))(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_6'.format(n))(out)
+                           name='dense_{}_1'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1))(out)
         out = layers.Dropout(dropout_rate)(out)
+        out = layers.Dense(layer_sz, activation='relu',
+                           name='dense_{}_2'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1))(out)
+        out = layers.Dropout(dropout_rate)(out)
+        out = layers.Dense(layer_sz, activation='relu',
+                           name='dense_{}_3'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1))(out)
+        out = layers.LayerNormalization(name='ln_{}'.format(n))(out)
+        out = layers.Dense(layer_sz, activation='relu',
+                           name='dense_{}_4'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1))(out)
+        out = layers.Dropout(dropout_rate)(out)
+        out = layers.Dense(layer_sz, activation='relu',
+                           name='dense_{}_5'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1))(out)
+        out = layers.Dropout(dropout_rate)(out)
+        out = layers.Dense(layer_sz, activation='relu',
+                           name='dense_{}_6'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1))(out)
     out = layers.Dense(layer_sz, activation='relu',
                        name='final_dense')(out)
     smax = layers.Dense(2, activation='softmax',
@@ -99,11 +109,11 @@ files = st.getFiles()
 #%%
 
 nspl = 5
-tune_hyperparams = False
+tune_hyperparams = True
 scale = StandardScaler()
 cv = KFold(n_splits=nspl, shuffle=True)
-scale_df = fl.arrangeFrame(files, scaling=StandardScaler(), noinfluence=True)
-unscale_df = fl.arrangeFrame(files, scaling=None, noinfluence=True)
+scale_df = fl.arrangeFrame(files, scaling=StandardScaler(), noinfluence=False)
+unscale_df = fl.arrangeFrame(files, scaling=None, noinfluence=False)
 games = fl.arrangeTourneyGames(files, noraw=True)
 sdf = scale_df[0]
 t_df = st.getTourneyStats(games[0], unscale_df[0], files)
@@ -126,12 +136,11 @@ seed_bench = sum(np.logical_and(e1['T_Seed'].values[eq_sds] - e2['T_Seed'].value
 #%%
 
 #Set up probabilistic forecast, teach it to know what wins games
-prob_df = sdf.drop(columns=[c for c in sdf.columns if c[:1] == 'O'] + \
-                   ['DayNum', 'T_Score', 'T_FGM', 'T_FGA', 'T_Poss', 'T_OffRat', 'T_DefRat'])
+prob_df = sdf.drop(columns=[c for c in sdf.columns if c[:1] == 'O'])
 pdf = prob_df.groupby(['GameID']).first() - prob_df.groupby(['GameID']).last()
 pdf = pdf.append(-pdf).sort_index().set_index(prob_df.sort_index().index)
 
-kpca = decomp.TruncatedSVD(10)
+kpca = decomp.TruncatedSVD(40)
 kpca.fit(pdf)
 ff = pd.DataFrame(index=pdf.index, data=kpca.transform(pdf)).groupby(['Season', 'TID']).mean()
 
@@ -143,20 +152,22 @@ e1, e2, e_out = get_frames(games[0].index, cmb_df, games[1])
 #%%
 K.clear_session()
 
-HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([20, 40, 60, 100]))
-HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4]))
-HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-2, 1e-3, 1e-4]))
+HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([100, 150, 200, 250, 300]))
+HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2]))
+HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-2, 1e-3, 1e-4, 1e-5]))
 
 METRIC_ACCURACY = 'accuracy'
+METRIC_TOURN_ACC = 't_acc'
 
 with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
     hp.hparams_config(
       hparams=[HP_NUM_UNITS, HP_NUM_LAYERS, HP_LR],
-      metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
+      metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy'),
+               hp.Metric(METRIC_TOURN_ACC, display_name='Tourn. Acc')],
     )
 
 learn_rate = 1e-3
-num_epochs = 300
+num_epochs = 400
 logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
@@ -169,9 +180,7 @@ k_calls = [tf.keras.callbacks.EarlyStopping(
             TensorBoard(histogram_freq=3, write_images=False,
                         log_dir=logdir)]
 metrics = ['accuracy',
-           tf.keras.metrics.AUC(),
-           tf.keras.metrics.Precision(),
-           tf.keras.metrics.Recall()]
+           tf.keras.metrics.AUC()]
 
 opt_adam = keras.optimizers.Adam(learning_rate=learn_rate)
 
@@ -204,15 +213,17 @@ if tune_hyperparams:
                     model.fit([Xt1, Xt2], yt, epochs=num_epochs, validation_data=([Xs1, Xs2], ys),
                               callbacks=callbacks, verbose=2, batch_size=200)
                     mets = model.evaluate([Xs1, Xs2], ys)
+                    m_t = model.evaluate([e1, e2], e_out)
                     tf.summary.scalar(METRIC_ACCURACY, mets[1], step=1)
+                    tf.summary.scalar(METRIC_TOURN_ACC, m_t[1], step=1)
                 session_num += 1
 else:
-    model = compile_model(g1.shape[1], 80, 
+    model = compile_model(g1.shape[1], 200, 
                         1, 
                         optimizer = keras.optimizers.Adam(learning_rate=1e-4),
                         metrics=metrics)
     model.fit([Xt1, Xt2], yt, epochs=num_epochs, validation_data=([Xs1, Xs2], ys),
-              callbacks=k_calls, verbose=2, batch_size=200)
+              callbacks=k_calls, verbose=2, batch_size=100)
 model.evaluate([e1, e2], e_out)
 
 

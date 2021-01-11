@@ -54,32 +54,10 @@ def compile_model(state_sz, layer_sz, n_layers, optimizer='adam', metrics=['accu
     out = layers.Dense(layer_sz, activation='relu', name='init_dense')(mdlconc)
     for n in range(n_layers):
         out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_0'.format(n),
-                           kernel_regularizer=regularizers.l2(1e-1))(out)
+                           name='dense_{}'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1),
+                           bias_regularizer=regularizers.l2(1e-1))(out)
         out = layers.Dropout(dropout_rate)(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_1'.format(n),
-                           kernel_regularizer=regularizers.l2(1e-1))(out)
-        out = layers.Dropout(dropout_rate)(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_2'.format(n),
-                           kernel_regularizer=regularizers.l2(1e-1))(out)
-        out = layers.Dropout(dropout_rate)(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_3'.format(n),
-                           kernel_regularizer=regularizers.l2(1e-1))(out)
-        out = layers.LayerNormalization(name='ln_{}'.format(n))(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_4'.format(n),
-                           kernel_regularizer=regularizers.l2(1e-1))(out)
-        out = layers.Dropout(dropout_rate)(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_5'.format(n),
-                           kernel_regularizer=regularizers.l2(1e-1))(out)
-        out = layers.Dropout(dropout_rate)(out)
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}_6'.format(n),
-                           kernel_regularizer=regularizers.l2(1e-1))(out)
     out = layers.Dense(layer_sz, activation='relu',
                        name='final_dense')(out)
     smax = layers.Dense(2, activation='softmax',
@@ -140,7 +118,7 @@ prob_df = sdf.drop(columns=[c for c in sdf.columns if c[:1] == 'O'])
 pdf = prob_df.groupby(['GameID']).first() - prob_df.groupby(['GameID']).last()
 pdf = pdf.append(-pdf).sort_index().set_index(prob_df.sort_index().index)
 
-kpca = decomp.TruncatedSVD(40)
+kpca = decomp.TruncatedSVD(60)
 kpca.fit(pdf)
 ff = pd.DataFrame(index=pdf.index, data=kpca.transform(pdf)).groupby(['Season', 'TID']).mean()
 
@@ -152,9 +130,9 @@ e1, e2, e_out = get_frames(games[0].index, cmb_df, games[1])
 #%%
 K.clear_session()
 
-HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([100, 150, 200, 250, 300]))
-HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2]))
-HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-2, 1e-3, 1e-4, 1e-5]))
+HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([100, 200, 300, 400, 500]))
+HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4]))
+HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-4, 1e-5]))
 
 METRIC_ACCURACY = 'accuracy'
 METRIC_TOURN_ACC = 't_acc'
@@ -172,7 +150,7 @@ logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
                     min_delta=1e-4,
-                    patience=50,
+                    patience=20,
                     verbose=0,
                     mode="auto",
                     baseline=None,
@@ -219,7 +197,7 @@ if tune_hyperparams:
                 session_num += 1
 else:
     model = compile_model(g1.shape[1], 200, 
-                        1, 
+                        2, 
                         optimizer = keras.optimizers.Adam(learning_rate=1e-4),
                         metrics=metrics)
     model.fit([Xt1, Xt2], yt, epochs=num_epochs, validation_data=([Xs1, Xs2], ys),

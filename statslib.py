@@ -206,21 +206,9 @@ def getTourneyStats(tdf, df, files):
     df = df.sort_values('GameID')
     tdf = tdf.sort_values('GameID')
     seeds = pd.read_csv(files['MNCAATourneySeeds'])
-    wdf['GameRank'] = 0
     for idx, team in tdf.groupby(['Season', 'TID']):
-        if team.shape[0] < 6:
-            loss = -1
-            pts_added = np.exp(-.1 * abs(team['T_Score'].values[-1] - team['O_Score'].values[-1]))
-        else:
-            if team['T_Score'].values[-1] > team['O_Score'].values[-1]:
-                loss = 0
-                pts_added = 1 - np.exp(-.1 * abs(team['T_Score'].values[-1] - team['O_Score'].values[-1]))
-            else:
-                loss = -1
-                pts_added = np.exp(-.1 * abs(team['T_Score'].values[-1] - team['O_Score'].values[-1]))
-        
-        wdf.loc[idx, 'GameRank'] = team.shape[0] + loss
-        wdf.loc[idx, 'AdjGameRank'] = team.shape[0] + loss + pts_added
+        wdf.loc[idx, 'T_Momentum'] = np.mean(np.gradient(df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values)[-3:])
+        wdf.loc[idx, 'T_RankNoise'] = np.std(df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values)
         sd = seeds.loc[np.logical_and(seeds['Season'] == idx[0],
                                       seeds['TeamID'] == idx[1]), 'Seed'].values[0][1:]
         sd = int(sd[:-1]) if len(sd) > 2 else int(sd)

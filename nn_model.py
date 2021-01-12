@@ -48,16 +48,49 @@ optimizer: the optimization method for the model. Adam is the default,
 '''
 def compile_model(state_sz, layer_sz, n_layers, optimizer='adam', metrics=['accuracy']):
     dropout_rate = .4
-    inp1 = keras.Input(shape=(state_sz,))
-    inp2 = keras.Input(shape=(state_sz,))
-    mdlconc = layers.Subtract()([inp1, inp2])
-    out = layers.Dense(layer_sz, activation='relu', name='init_dense')(mdlconc)
+    inp = keras.Input(shape=(state_sz[1], state_sz[2], state_sz[3]))
+    x_splits = tf.split(inp, num_or_size_splits=2, axis=2)
+    mdlconc = layers.Subtract()(x_splits)
+    xconc = layers.Concatenate(axis=2)([inp, mdlconc])
+    out = layers.Dense(layer_sz, activation='relu', name='conc_dense',
+                           kernel_regularizer=regularizers.l2(1e-1),
+                           bias_regularizer=regularizers.l2(1e-1))(xconc)
+    out = layers.Flatten()(out)
+    out = layers.Dense(layer_sz, activation='relu', name='init_dense',
+                           kernel_regularizer=regularizers.l2(1e-1),
+                           bias_regularizer=regularizers.l2(1e-1))(out)
+    out = layers.Dropout(dropout_rate)(out)
     for n in range(n_layers):
         out = layers.Dense(layer_sz, activation='relu',
                            name='dense_{}'.format(n),
                            kernel_regularizer=regularizers.l2(1e-1),
                            bias_regularizer=regularizers.l2(1e-1))(out)
         out = layers.Dropout(dropout_rate)(out)
+    out = layers.Dense(layer_sz, activation='relu',
+                       name='final_dense')(out)
+    smax = layers.Dense(2, activation='softmax',
+                        name='output')(out)
+    model = keras.Model(inputs=inp, outputs=smax)
+    model.compile(optimizer=optimizer,
+                  loss=['binary_crossentropy'],
+                  metrics=metrics)
+    return model
+
+def compile_second_stage(state_sz, layer_sz, n_layers, optimizer='adam', metrics=['accuracy']):
+    dropout_rate = .4
+    inp1 = keras.Input(shape=(state_sz,))
+    inp2 = keras.Input(shape=(state_sz,))
+    mdlconc = layers.Subtract()([inp1, inp2])
+    out = layers.Dense(layer_sz, activation='relu', name='init_dense',
+                           kernel_regularizer=regularizers.l2(1e-1),
+                           bias_regularizer=regularizers.l2(1e-1))(mdlconc)
+    #out = layers.Dropout(dropout_rate)(out)
+    for n in range(n_layers):
+        out = layers.Dense(layer_sz, activation='relu',
+                           name='dense_{}'.format(n),
+                           kernel_regularizer=regularizers.l2(1e-1),
+                           bias_regularizer=regularizers.l2(1e-1))(out)
+        #out = layers.Dropout(dropout_rate)(out)
     out = layers.Dense(layer_sz, activation='relu',
                        name='final_dense')(out)
     smax = layers.Dense(2, activation='softmax',
@@ -87,7 +120,7 @@ files = st.getFiles()
 #%%
 
 nspl = 5
-tune_hyperparams = True
+tune_hyperparams = False
 scale = StandardScaler()
 cv = KFold(n_splits=nspl, shuffle=True)
 scale_df = fl.arrangeFrame(files, scaling=StandardScaler(), noinfluence=False)
@@ -125,14 +158,18 @@ ff = pd.DataFrame(index=pdf.index, data=kpca.transform(pdf)).groupby(['Season', 
 cmb_df = avdf.merge(ff, left_index=True, right_index=True)
 
 g1, g2, outcomes = get_frames(sdf.index, cmb_df, scale_df[1])
+Gv = np.swapaxes(np.concatenate((g1.values, g2.values)).reshape((2, *g1.shape)).T, 0, 1)
+Gv = np.swapaxes(Gv.reshape((*Gv.shape, 1)), 1, 3)
 e1, e2, e_out = get_frames(games[0].index, cmb_df, games[1])
+Ev = np.swapaxes(np.concatenate((e1.values, e2.values)).reshape((2, *e1.shape)).T, 0, 1)
+Ev = np.swapaxes(Ev.reshape((*Ev.shape, 1)), 1, 3)
 
 #%%
 K.clear_session()
 
-HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([100, 200, 300, 400, 500]))
-HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4]))
-HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-4, 1e-5]))
+HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([100, 200, 300, 400, 500, 600, 700, 800, 900]))
+HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4, 5]))
+HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-3, 1e-4, 1e-5, 1e-6]))
 
 METRIC_ACCURACY = 'accuracy'
 METRIC_TOURN_ACC = 't_acc'
@@ -146,7 +183,7 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
 
 learn_rate = 1e-3
 num_epochs = 400
-logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+logdir = "logs/fit/st1_" + datetime.now().strftime("%Y%m%d-%H%M%S")
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
                     min_delta=1e-4,
@@ -164,8 +201,8 @@ opt_adam = keras.optimizers.Adam(learning_rate=learn_rate)
 
 
 t_pts, v_pts = next(cv.split(outcomes))
-Xt1, Xs1 = g1.iloc[t_pts], g1.iloc[v_pts]
-Xt2, Xs2 = g2.iloc[t_pts], g2.iloc[v_pts]
+Xt = Gv[t_pts]
+Xs = Gv[v_pts]
 yt, ys = outcomes[t_pts], outcomes[v_pts]
 
 if tune_hyperparams:
@@ -188,22 +225,57 @@ if tune_hyperparams:
                 print({h.name: hparams[h] for h in hparams})
                 with tf.summary.create_file_writer('logs/hparam_tuning/' + run_name).as_default():
                     hp.hparams(hparams)  # record the values used in this trial
-                    model.fit([Xt1, Xt2], yt, epochs=num_epochs, validation_data=([Xs1, Xs2], ys),
-                              callbacks=callbacks, verbose=2, batch_size=200)
-                    mets = model.evaluate([Xs1, Xs2], ys)
-                    m_t = model.evaluate([e1, e2], e_out)
+                    model.fit(Xt, yt, epochs=num_epochs, validation_data=(Xs, ys),
+                              callbacks=callbacks, verbose=2, batch_size=64)
+                    mets = model.evaluate(Xs, ys)
+                    m_t = model.evaluate(Ev, e_out)
                     tf.summary.scalar(METRIC_ACCURACY, mets[1], step=1)
                     tf.summary.scalar(METRIC_TOURN_ACC, m_t[1], step=1)
                 session_num += 1
 else:
-    model = compile_model(g1.shape[1], 200, 
+    model = compile_model(Gv.shape, 100, 
                         2, 
-                        optimizer = keras.optimizers.Adam(learning_rate=1e-4),
+                        optimizer = keras.optimizers.Adam(learning_rate=1e-5),
                         metrics=metrics)
-    model.fit([Xt1, Xt2], yt, epochs=num_epochs, validation_data=([Xs1, Xs2], ys),
-              callbacks=k_calls, verbose=2, batch_size=100)
-model.evaluate([e1, e2], e_out)
+    model.fit(Xt, yt, epochs=num_epochs, validation_data=(Xs, ys),
+              callbacks=k_calls, verbose=2, batch_size=64)
+model.evaluate(Ev, e_out)
 
+#%%
+K.clear_session()
+
+#MODEL STAGE TWO
+logdir = "logs/fit/st2_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+k_calls = [tf.keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    min_delta=1e-4,
+                    patience=20,
+                    verbose=0,
+                    mode="auto",
+                    baseline=None,
+                    restore_best_weights=True),
+            TensorBoard(histogram_freq=3, write_images=False,
+                        log_dir=logdir)]
+
+st1_output = model.predict(Ev)
+aug_df = t_df.copy()
+aug_df = pd.DataFrame(index=aug_df.index, columns=aug_df.columns,
+                      data=scale.fit_transform(aug_df))
+a1, a2, at = get_frames(games[0].index, aug_df, games[1])
+a1['M1'] = st1_output[:, 0] - .5
+a2['M1'] = st1_output[:, 1] - .5
+
+t_pts, v_pts = next(cv.split(at))
+Xt1, Xt2 = a1.iloc[t_pts], a2.iloc[t_pts]
+Xs1, Xs2 = a1.iloc[v_pts], a2.iloc[v_pts]
+yt, ys = at[t_pts], at[v_pts]
+
+md2 = compile_second_stage(a1.shape[1], 400, 
+                    3, 
+                    optimizer = keras.optimizers.Adam(learning_rate=1e-5),
+                    metrics=metrics)
+md2.fit([Xt1, Xt2], yt, epochs=4500, validation_data=([Xs1, Xs2], ys),
+          callbacks=k_calls, verbose=2, batch_size=64)
 
 
 

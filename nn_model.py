@@ -262,8 +262,8 @@ aug_df = t_df.copy()
 aug_df = pd.DataFrame(index=aug_df.index, columns=aug_df.columns,
                       data=scale.fit_transform(aug_df))
 a1, a2, at = get_frames(games[0].index, aug_df, games[1])
-a1['M1'] = st1_output[:, 0] - .5
-a2['M1'] = st1_output[:, 1] - .5
+#a1['M1'] = st1_output[:, 0] - .5
+#a2['M1'] = st1_output[:, 1] - .5
 
 t_pts, v_pts = next(cv.split(at))
 Xt1, Xt2 = a1.iloc[t_pts], a2.iloc[t_pts]
@@ -271,7 +271,7 @@ Xs1, Xs2 = a1.iloc[v_pts], a2.iloc[v_pts]
 yt, ys = at[t_pts], at[v_pts]
 
 md2 = compile_second_stage(a1.shape[1], 400, 
-                    3, 
+                    5, 
                     optimizer = keras.optimizers.Adam(learning_rate=1e-5),
                     metrics=metrics)
 md2.fit([Xt1, Xt2], yt, epochs=4500, validation_data=([Xs1, Xs2], ys),

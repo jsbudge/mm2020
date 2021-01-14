@@ -13,9 +13,14 @@ Mostly, rosters and coach data.
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from sklearn.preprocessing import OrdinalEncoder
+from dataclasses import dataclass
+from itertools import groupby
 
+def all_equal(i, q):
+    return np.all([ii in q for ii in i])
 
-poss_breaks = np.array([1200, 2400, 2700, 3000, 3300, 3600, 3900, 4200])
+poss_breaks = np.array([0, 1200, 2400, 2700, 3000, 3300, 3600, 3900, 4200])
 
 '''
 Gets stats for every player in every game.
@@ -39,8 +44,8 @@ def getRosters(files, season):
     
     #Load things into memory, which speeds up the minutes calculations but...uses more memory.
     maxp = evp.groupby(['GameID']).apply(lambda x: poss_breaks[:sum(poss_breaks <= x['ElapsedSeconds'].max())+1])
-    subins = evp.loc[evp['EventSubType'] == 'in'].groupby(['GameID', 'EventPlayerID']).apply(lambda x: x['ElapsedSeconds'].values)
-    subouts = evp.loc[evp['EventSubType'] == 'out'].groupby(['GameID', 'EventPlayerID']).apply(lambda x: x['ElapsedSeconds'].values)
+    subins = evp.loc[evp['EventSubType'] == 'in'].groupby(['GameID', 'EventPlayerID']).apply(lambda x: x['ElapsedSeconds'].values - .5)
+    subouts = evp.loc[evp['EventSubType'] == 'out'].groupby(['GameID', 'EventPlayerID']).apply(lambda x: x['ElapsedSeconds'].values + .5)
     for idx, grp in tqdm(evp.groupby(['GameID', 'EventPlayerID'])):
         pb = maxp.loc[idx[0]] #poss_breaks[:sum(poss_breaks <= grp['ElapsedSeconds'].max())+1]
         try:
@@ -51,25 +56,9 @@ def getRosters(files, season):
             subin = subins.loc[idx] #grp.loc[grp['EventSubType'] == 'in', 'ElapsedSeconds'].values
         except:
             subin = []
-        if len(subout) == 0 and len(subin) == 0:
-            mins = pb[-1]
-        else:
-            subs = [('si', n) for n in subin] + [('so', n) for n in subout]
-            subs.sort(key = lambda x: x[1])
-            mins = 0; so = 0; si = 0
-            ing = False if subs[0][0] == 'si' else True
-            for (t, m) in subs:
-                if t == 'si':
-                    if not ing:
-                        si = m
-                        ing = True
-                if t == 'so':
-                    if ing:
-                        so = m
-                        mins += so - si
-                        ing = False
-            if ing:
-                mins += pb[-1] - si
+        breaks = np.sort(list(pb) + list(subout) + list(subin))
+        nev, secs = np.histogram(grp['ElapsedSeconds'], breaks)
+        mins = sum([secs[n+1] - secs[n] for n in range(len(nev)) if nev[n] > 0])
         evst.loc[idx, 'Mins'] = np.round(mins / 60, 2)
     evst['Ast'] = ev['assist'].values
     evst['Blk'] = ev['block'].values
@@ -97,55 +86,100 @@ def getEvents(files, season):
     return pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
 
 def getSingleGameLineups(gid, files, season):
-    evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
+    evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
     evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
-    evp = evp.reset_index().set_index(['GameID', 'EventPlayerID'])
-    #evp = evp.loc[evp.index.get_level_values(1) != 0]
-    ev = evp.loc(axis=0)[gid, :]
-    gl = poss_breaks[poss_breaks >= ev['ElapsedSeconds'].max()].min()
-    pb = poss_breaks[poss_breaks <= gl]
-    nms = ('W', 'L')
-    ids = (ev['WTeamID'].values[0], ev['LTeamID'].values[0])
-    game = (pd.DataFrame(index=np.arange(gl)),
-            pd.DataFrame(index=np.arange(gl)))
-    for t in range(2):
-        ts = 0
-        wev = ev.loc[ev['EventTeamID'] == ids[t], ['EventType', 'EventSubType', 'ElapsedSeconds']]
-        players = np.sort(list(set(wev.index.get_level_values(1))))
-        inglist = np.zeros((gl,))
-        for p in players:
-            psub = wev.loc(axis=0)[:, p]
-            try:
-                subout = psub.loc[psub['EventSubType'] == 'out', 'ElapsedSeconds'].values
-            except:
-                subout = []
-            try:
-                subin = psub.loc[psub['EventSubType'] == 'in', 'ElapsedSeconds'].values
-            except:
-                subin = []
-            if len(subout) == 0 and len(subin) == 0:
-                inglist += 1
+    evp = evp.reset_index().set_index(['GameID', 'EventID'])
+    ordenc = OrdinalEncoder()
+    ev = evp.loc(axis=0)[gid, :].copy()
+    wid = ev['WTeamID'].values[0]; lid = ev['LTeamID'].values[0]
+    ev['EventTypeID'] = ordenc.fit_transform(np.array([row['EventType'] + str(row['EventSubType']) for idx, row in ev.iterrows()]).reshape((-1, 1))).astype(int)
+    ev = ev.drop(columns=['DayNum', 'X', 'Y', 'Area',
+                          'WTeamID', 'LTeamID'])
+    ev = ev.loc[ev['EventPlayerID'] != 0]
+    mxepsec = ev['ElapsedSeconds'].max()
+    ov = [0, 1200, 2400]
+    while ov[-1] < mxepsec:
+        ov = ov + [ov[-1] + 300]
+    for idx, row in ev.iterrows():
+        if row['EventTeamID'] == wid:
+            if 'made1' in row['EventType']:
+                ev.loc[idx, 'WCurrentScore'] = 1
+            elif 'made2' in row['EventType']:
+                ev.loc[idx, 'WCurrentScore'] = 2
+            elif 'made3' in row['EventType']:
+                ev.loc[idx, 'WCurrentScore'] = 3
             else:
-                subs = [('si', n) for n in subin] + [('so', n) for n in subout]
-                subs.sort(key = lambda x: x[1])
-                mins = 0; so = 0; si = 0
-                ing = False if subs[0][0] == 'si' else True
-                for n in range(gl):
-                    if n in subin:
-                        ing = True
-                        si += 1 if si + 1 < len(subin) else 0
-                    if n in subout:
-                        ing = False
-                        so += 1 if so + 1 < len(subout) else 0
-                    if n in pb:
-                        if subout[so] > n and subin[si] > subout[so]:
-                            ing = True
-                        else:
-                            ing = False
-                    inglist[n] = ing
-            game[t]['P{}'.format(p)] = inglist
-        nump = np.sum(game[t], axis=1)
-    return 0
+                ev.loc[idx, 'WCurrentScore'] = 0
+        else:
+            if 'made1' in row['EventType']:
+                ev.loc[idx, 'LCurrentScore'] = 1
+            elif 'made2' in row['EventType']:
+                ev.loc[idx, 'LCurrentScore'] = 2
+            elif 'made3' in row['EventType']:
+                ev.loc[idx, 'LCurrentScore'] = 3
+            else:
+                ev.loc[idx, 'LCurrentScore'] = 0
+    ev['WCurrentScore'] = np.cumsum(ev['WCurrentScore'])
+    ev['LCurrentScore'] = np.cumsum(ev['LCurrentScore'])
+    lns = (pd.DataFrame(index=np.arange(ov[-1]), columns=list(set(ev.loc[ev['EventTeamID'] == wid,
+                                                                         'EventPlayerID'].values)),
+                         data=False),
+           pd.DataFrame(index=np.arange(ov[-1]), columns=list(set(ev.loc[ev['EventTeamID'] == lid,
+                                                                         'EventPlayerID'].values)),
+                         data=False))
+    for pid, p in ev.groupby(['EventPlayerID']):
+        if pid != 0:
+            poss_subs = np.sort(ov + \
+                list(p.loc[p['EventTypeID'] == 17, 'ElapsedSeconds'] - .5) + \
+                    list(p.loc[p['EventTypeID'] == 18, 'ElapsedSeconds'] + .5))
+            nev, secs = np.histogram(p['ElapsedSeconds'], poss_subs)
+            for n in range(len(nev)):
+                if nev[n] > 0:
+                    if pid in lns[0].columns:
+                        lns[0].loc[np.logical_and(lns[0].index > secs[n],
+                                                  lns[0].index < secs[n+1]), pid] = True
+                    else:
+                        lns[1].loc[np.logical_and(lns[1].index > secs[n],
+                                                  lns[1].index < secs[n+1]), pid] = True
+    lineups = [{}, {}]
+    line_df = pd.DataFrame(index=lns[0].index)
+    for tt in range(2):
+        n = 0
+        for idx, row in lns[tt].iterrows():
+            lu = [col for col in lns[tt].columns if row[col]]
+            if len(lu) == 5:
+                if len(lineups[tt]) == 0:
+                    lineups[tt][n] = lu
+                    n += 1
+                elif not np.any([all_equal(lineups[tt][l], lu) for l in lineups[tt]]):
+                    lineups[tt][n] = lu
+                    n += 1
+        lineupID = np.ones((lns[tt].shape[0],)) * -1
+        for idx, row in lns[tt].iterrows():
+            lu = [col for col in lns[tt].columns if row[col]]
+            key = [l for l in lineups[tt] if all_equal(lineups[tt][l], lu)]
+            lineupID[idx] = int(key[0]) if len(key) > 0 else -1
+        if tt == 0:
+            line_df['T_LineID'] = lineupID
+        else:
+            line_df['O_LineID'] = lineupID
+    for idx, row in ev.iterrows():
+        if row['EventTeamID'] == wid:
+            if 'reb' in row['EventType']:
+                line_df.loc[row['ElapsedSeconds'], 'T_R'] = 1
+            if 'made' in row['EventType']:
+                line_df.loc[row['ElapsedSeconds'], 'T_Pt'] = int(row['EventType'][-1])
+        if row['EventTeamID'] == lid:
+            if 'reb' in row['EventType']:
+                line_df.loc[row['ElapsedSeconds'], 'O_R'] = 1
+            if 'made' in row['EventType']:
+                line_df.loc[row['ElapsedSeconds'], 'O_Pt'] = int(row['EventType'][-1])
+    line_df = line_df.fillna(0)
+    lsum_df = line_df.groupby(['T_LineID']).sum().drop(columns=['O_LineID'])
+    for col in line_df.columns.drop(['T_LineID', 'O_LineID']):
+        lsum_df[col + 'PM'] = lsum_df[col] - lsum_df['O_' + col[2:]] if col[:2] == 'T_' else \
+            lsum_df[col] - lsum_df['T_' + col[2:]]
+    return lineups, lsum_df
 
 def getAdvStats(df):
     wdf = pd.DataFrame(index=df.index)

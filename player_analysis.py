@@ -35,13 +35,12 @@ def findPlayerTeam(games, rosters, pid):
 games, rosters = ev.getRosters(files, 2017)
 #%%
 
-p_df = rosters.groupby(['PlayerID']).sum()
+sum_df = rosters.groupby(['PlayerID']).sum()
 av_df = ev.getAdvStats(p_df)
 av_df = av_df.loc[rosters.groupby(['PlayerID']).sum()['Mins'] > 36]
 ov_perc = (av_df - av_df.mean()) / av_df.std()
 cat_perc = ov_perc.copy()
 adv_df = rosters.groupby(['PlayerID']).mean()
-p_df = (p_df - p_df.mean()) / p_df.std()
 sdf = fl.arrangeFrame(files, scaling=None, noinfluence=True)[0].loc(axis=0)[:, 2017, :, :]
 savdf = st.getSeasonalStats(sdf, strat='relelo')
 #%%

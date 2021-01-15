@@ -130,8 +130,8 @@ def getSingleGameLineups(gid, files, season):
     for pid, p in ev.groupby(['EventPlayerID']):
         if pid != 0:
             poss_subs = np.sort(ov + \
-                list(p.loc[p['EventTypeID'] == 17, 'ElapsedSeconds'] - .5) + \
-                    list(p.loc[p['EventTypeID'] == 18, 'ElapsedSeconds'] + .5))
+                list(p.loc[p['EventSubType'] == 'in', 'ElapsedSeconds'] - .5) + \
+                    list(p.loc[p['EventSubType'] == 'out', 'ElapsedSeconds'] + .5))
             nev, secs = np.histogram(p['ElapsedSeconds'], poss_subs)
             for n in range(len(nev)):
                 if nev[n] > 0:
@@ -174,12 +174,17 @@ def getSingleGameLineups(gid, files, season):
                 line_df.loc[row['ElapsedSeconds'], 'O_R'] = 1
             if 'made' in row['EventType']:
                 line_df.loc[row['ElapsedSeconds'], 'O_Pt'] = int(row['EventType'][-1])
+    line_df['Mins'] = 1 / 60
     line_df = line_df.fillna(0)
-    lsum_df = line_df.groupby(['T_LineID']).sum().drop(columns=['O_LineID'])
-    for col in line_df.columns.drop(['T_LineID', 'O_LineID']):
-        lsum_df[col + 'PM'] = lsum_df[col] - lsum_df['O_' + col[2:]] if col[:2] == 'T_' else \
-            lsum_df[col] - lsum_df['T_' + col[2:]]
-    return lineups, lsum_df
+    lsum1_df = line_df.groupby(['T_LineID']).sum().drop(columns=['O_LineID'])
+    lsum2_df = line_df.groupby(['O_LineID']).sum().drop(columns=['T_LineID'])
+    lmatch_df = line_df.groupby(['T_LineID', 'O_LineID']).sum()
+    for col in line_df.columns.drop(['T_LineID', 'O_LineID', 'Mins']):
+        lsum1_df[col + 'PM'] = lsum1_df[col] - lsum1_df['O_' + col[2:]] if col[:2] == 'T_' else \
+            lsum1_df[col] - lsum1_df['T_' + col[2:]]
+        lsum2_df[col + 'PM'] = lsum2_df[col] - lsum2_df['O_' + col[2:]] if col[:2] == 'T_' else \
+            lsum2_df[col] - lsum2_df['T_' + col[2:]]
+    return ev, lineups, line_df, (lsum1_df, lsum2_df, lmatch_df)
 
 def getAdvStats(df):
     wdf = pd.DataFrame(index=df.index)

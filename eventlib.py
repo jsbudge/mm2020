@@ -190,14 +190,23 @@ def getAdvStats(df):
     wdf = pd.DataFrame(index=df.index)
     mins = df['Mins']
     mins[mins < 5] = 5 #Removes exploding values
-    for col in df.columns:
-        if col != 'Mins':
-            wdf[col + 'Per36'] = df[col]  * 36 / mins.values
+    wdf['AstPer18'] = df['Ast'] * 18 / mins.values
+    wdf['PtsPer18'] = df['Pts'] * 18 / mins.values
+    wdf['BlkPer18'] = df['Blk'] * 18 / mins.values
+    wdf['StlPer18'] = df['Stl'] * 18 / mins.values
+    wdf['TOPer18'] = df['TO'] * 18 / mins.values
+    wdf['FoulPer18'] = df['Foul'] * 18 / mins.values
+    wdf['ORPer18'] = df['OR'] * 18 / mins.values
+    wdf['DRPer18'] = df['DR'] * 18 / mins.values
+    wdf['RPer18'] = (df['OR'] + df['DR']) * 18 / mins.values
+    wdf['Lay%'] = df['LayM'] / df['FGM']
+    wdf['Dunk%'] = df['DunkM'] / df['FGM']
     wdf['FG%'] = df['FGM'] / df['FGA']
+    wdf['3Pt%'] = df['FGM3'] / df['FGA3']
     wdf['eFG%'] = (df['FGM'] + .5 * df['FGM3']) / df['FGA']
     wdf['TS%'] = df['Pts'] / (2 * (df['FGA'] + .44 * df['FTA']))
     wdf['Econ'] = df['Ast'] + df['Stl'] - df['TO']
-    wdf['Smart%'] = (df['FGA3'] + df['LayA'] + df['DunkA']) / df['FGA']
+    wdf['EffShot%'] = (df['FGA3'] + df['LayA'] + df['DunkA']) / df['FGA']
     wdf['FT/A'] = df['FTA'] / df['FGA']
     wdf['FT%'] = df['FTM'] / df['FTA']
     return wdf.dropna()

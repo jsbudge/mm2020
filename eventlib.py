@@ -169,22 +169,38 @@ def getSingleGameLineups(gid, files, season):
                 line_df.loc[row['ElapsedSeconds'], 'T_R'] = 1
             if 'made' in row['EventType']:
                 line_df.loc[row['ElapsedSeconds'], 'T_Pt'] = int(row['EventType'][-1])
+                line_df.loc[row['ElapsedSeconds'], 'T_Shot'] = 1
+                line_df.loc[row['ElapsedSeconds'], 'T_Poss'] = 1
+            if 'miss' in row['EventType']:
+                line_df.loc[row['ElapsedSeconds'], 'T_Shot'] = 1
+                line_df.loc[row['ElapsedSeconds'], 'T_Poss'] = 1
+            if 'turnover' in row['EventType']:
+                line_df.loc[row['ElapsedSeconds'], 'T_TO'] = 1
+                line_df.loc[row['ElapsedSeconds'], 'T_Poss'] = 1
         if row['EventTeamID'] == lid:
             if 'reb' in row['EventType']:
                 line_df.loc[row['ElapsedSeconds'], 'O_R'] = 1
             if 'made' in row['EventType']:
                 line_df.loc[row['ElapsedSeconds'], 'O_Pt'] = int(row['EventType'][-1])
+                line_df.loc[row['ElapsedSeconds'], 'O_Shot'] = 1
+                line_df.loc[row['ElapsedSeconds'], 'O_Poss'] = 1
+            if 'miss' in row['EventType']:
+                line_df.loc[row['ElapsedSeconds'], 'O_Shot'] = 1
+                line_df.loc[row['ElapsedSeconds'], 'O_Poss'] = 1
+            if 'turnover' in row['EventType']:
+                line_df.loc[row['ElapsedSeconds'], 'O_TO'] = 1
+                line_df.loc[row['ElapsedSeconds'], 'O_Poss'] = 1
     line_df['Mins'] = 1 / 60
     line_df = line_df.fillna(0)
-    lsum1_df = line_df.groupby(['T_LineID']).sum().drop(columns=['O_LineID'])
-    lsum2_df = line_df.groupby(['O_LineID']).sum().drop(columns=['T_LineID'])
-    lmatch_df = line_df.groupby(['T_LineID', 'O_LineID']).sum()
+    lsum_dfs = (line_df.groupby(['T_LineID']).sum().drop(columns=['O_LineID']),
+                line_df.groupby(['O_LineID']).sum().drop(columns=['T_LineID']),
+                line_df.groupby(['T_LineID', 'O_LineID']).sum())
     for col in line_df.columns.drop(['T_LineID', 'O_LineID', 'Mins']):
-        lsum1_df[col + 'PM'] = lsum1_df[col] - lsum1_df['O_' + col[2:]] if col[:2] == 'T_' else \
-            lsum1_df[col] - lsum1_df['T_' + col[2:]]
-        lsum2_df[col + 'PM'] = lsum2_df[col] - lsum2_df['O_' + col[2:]] if col[:2] == 'T_' else \
-            lsum2_df[col] - lsum2_df['T_' + col[2:]]
-    return ev, lineups, line_df, (lsum1_df, lsum2_df, lmatch_df)
+        for n in range(2):
+            lsum_dfs[n][col + 'PM'] = lsum_dfs[n][col] - lsum_dfs[n]['O_' + col[2:]] if col[:2] == 'T_' else \
+                lsum_dfs[n][col] - lsum_dfs[n]['T_' + col[2:]]
+    
+    return ev, lineups, line_df, lsum_dfs
 
 def getAdvStats(df):
     wdf = pd.DataFrame(index=df.index)

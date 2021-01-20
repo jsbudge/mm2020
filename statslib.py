@@ -60,9 +60,10 @@ Returns:
     split = False
         ret: DataFrame - frame of all games, double the length of the original CSV
 '''
-def getGames(fnme, split=False):
+def getGames(fnme, season=None, split=False):
     df = pd.read_csv(fnme)
-    
+    if season is not None:
+        df = df.loc[df['Season'] == season]
     #Map location to numbers
     df['WLoc'] = df['WLoc'].map({'A': -1, 'N': 0, 'H': 1})
     

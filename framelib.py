@@ -14,8 +14,8 @@ import pandas as pd
 import statslib as st
 from itertools import combinations, permutations
 
-def arrangeFrame(files, scaling=None, noraw=False, noinfluence=False):
-    ts = st.getGames(files['MRegularSeasonDetailedResults']).drop(columns=['NumOT', 'GLoc'])
+def arrangeFrame(files, season=None, scaling=None, noraw=False, noinfluence=False):
+    ts = st.getGames(files['MRegularSeasonDetailedResults'], season=season).drop(columns=['NumOT', 'GLoc'])
     ty = ts['T_Score'] > ts['O_Score'] - 0
     if noraw:
         ts = st.joinFrame(ts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],

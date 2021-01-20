@@ -24,20 +24,17 @@ poss_breaks = np.array([0, 1200, 2400, 2700, 3000, 3300, 3600, 3900, 4200])
 
 '''
 Gets stats for every player in every game.
-Note that the player IDs do not match the MPlayerID file, for some reason.
-THe stats themselves are correct for the ID, though, cross-checked
-against sports-reference.com.
 '''
 def getRosters(files, season):
     evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
     evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
-    evp = evp.reset_index().set_index(['GameID', 'WTeamID', 'LTeamID', 'EventPlayerID'])
-    evp = evp.loc[evp.index.get_level_values(3) != 0]
+    evp = evp.reset_index().set_index(['GameID', 'DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
+    evp = evp.loc[evp.index.get_level_values(4) != 0]
     evp['Pivot'] = 1
     ev = evp.pivot_table(index=evp.index, columns=['EventType', 'EventSubType'], values='Pivot', aggfunc=sum).fillna(0)
     ev.index = pd.MultiIndex.from_tuples(ev.index)
     evst = pd.DataFrame(index=ev.index)
-    evst.index = evst.index.set_names(['GameID', 'WTeamID', 'LTeamID', 'PlayerID'])
+    evst.index = evst.index.set_names(['GameID', 'DayNum', 'WTeamID', 'LTeamID', 'PlayerID'])
     evst = evst.reset_index().set_index(['GameID', 'PlayerID'])
     teams = evst.groupby(['GameID']).mean()
     evst['Mins'] = 0
@@ -227,17 +224,26 @@ def getAdvStats(df):
     wdf['FT%'] = df['FTM'] / df['FTA']
     return wdf.dropna()
 
+def getRateStats(df, sdf, pdf):
+    mdf = df.merge(pdf['TeamID'], on='PlayerID', right_index=True).sort_index()
+    mdf = mdf.merge(sdf, left_on=['GameID', 'TeamID'], right_on=['GameID', 'TID'], right_index=True)
+    wdf = pd.DataFrame(index=mdf.index)
+    scaling = mdf['Mins'] / \
+            (poss_breaks[np.digitize(mdf['Mins'] * 60, poss_breaks[2:]) + 2] / 60)
+    wdf['AstAccFor'] = mdf['Ast'] / mdf['T_Ast']
+    wdf['PtsAccFor'] = mdf['Pts'] / mdf['T_Score']
+    wdf['RAccFor'] = (mdf['OR'] + mdf['DR']) / (mdf['T_OR'] + mdf['T_DR'])
+    return wdf.dropna()
+
 def getPlayerSeasonStats(df):
     return df.groupby(['PlayerID']).mean()
 
 def getTeamRosters(files):
-    df = pd.read_csv(files['MPlayers'])
+    df = pd.read_csv(files['MPlayers'], error_bad_lines=False)
     df['FullName'] = df['FirstName'] + ' ' + df['LastName']
+    df = df.set_index(['PlayerID'])
     return df
 
-'''
-THESE ARE NOT CORRECT.
-'''
 def loadPlayerNames(files):
     df = pd.read_csv(files['MPlayers'])
     df['FullName'] = df['FirstName'] + ' ' + df['LastName']

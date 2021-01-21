@@ -228,11 +228,11 @@ def getRateStats(df, sdf, pdf):
     mdf = df.merge(pdf['TeamID'], on='PlayerID', right_index=True).sort_index()
     mdf = mdf.merge(sdf, left_on=['GameID', 'TeamID'], right_on=['GameID', 'TID'], right_index=True)
     wdf = pd.DataFrame(index=mdf.index)
-    scaling = mdf['Mins'] / \
-            (poss_breaks[np.digitize(mdf['Mins'] * 60, poss_breaks[2:]) + 2] / 60)
-    wdf['AstAccFor'] = mdf['Ast'] / mdf['T_Ast']
-    wdf['PtsAccFor'] = mdf['Pts'] / mdf['T_Score']
-    wdf['RAccFor'] = (mdf['OR'] + mdf['DR']) / (mdf['T_OR'] + mdf['T_DR'])
+    scaling = 67 / (mdf['Mins'] / \
+            (poss_breaks[np.digitize(mdf['Mins'] * 60, poss_breaks[2:]) + 2] / 60) * mdf['T_Poss'])
+    wdf['AstScale'] = mdf['Ast'] * scaling
+    wdf['PtsScale'] = mdf['Pts'] * scaling
+    wdf['RScale'] = (mdf['OR'] + mdf['DR']) * scaling
     return wdf.dropna()
 
 def getPlayerSeasonStats(df):

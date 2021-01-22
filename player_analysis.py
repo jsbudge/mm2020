@@ -45,13 +45,15 @@ def getTeamRosterData(team, rosters, games, df, season):
         
 season = 2016
 # av_df = pd.DataFrame()
-# adv_df = pd.DataFrame()
+# m_df = pd.DataFrame()
 # pdf = ev.getTeamRosters(files)
 # for seas in [2015, 2016, 2017, 2018, 2019, 2020]:
-#     sdf = fl.arrangeFrame(files, season, scaling=None, noinfluence=True)[0]
-#     games, rosters = ev.getRosters(files, seas)
-#     games.to_csv('./data/{}/Games{}.csv'.format(seas, seas))
-#     rosters.to_csv('./data/{}/Rosters{}.csv'.format(seas, seas))
+#     #sdf = fl.arrangeFrame(files, season, scaling=None, noinfluence=True)[0]
+#     games = pd.read_csv('./data/{}/Games{}.csv'.format(seas, seas)).set_index(['GameID'])
+#     rosters = pd.read_csv('./data/{}/Rosters{}.csv'.format(seas, seas)).set_index(['GameID', 'PlayerID'])
+#     #games, rosters = ev.getRosters(files, seas)
+#     #games.to_csv('./data/{}/Games{}.csv'.format(seas, seas))
+#     #rosters.to_csv('./data/{}/Rosters{}.csv'.format(seas, seas))
 #     sum_df = rosters.groupby(['PlayerID']).sum()
 #     tmp_df = ev.getAdvStats(sum_df)
 #     tmp_df['Season'] = seas
@@ -61,21 +63,23 @@ season = 2016
 #     tmp_df = rosters.groupby(['PlayerID']).mean()
 #     tmp_df['Season'] = seas
 #     tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
-#     adv_df = adv_df.append(tmp_df)
+#     m_df = m_df.append(tmp_df)
+# av_df = av_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
+# av_df = av_df.rename(columns={'TeamID': 'TID'})
+# av_df = av_df.reset_index().set_index(['Season', 'PlayerID', 'TID'])
+# m_df = m_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
+# m_df = m_df.rename(columns={'TeamID': 'TID'})
+# m_df = m_df.reset_index().set_index(['Season', 'PlayerID', 'TID'])
 # av_df.to_csv('./data/AVRosterData.csv')
-# adv_df.to_csv('./data/MeanRosterData.csv')
+# m_df.to_csv('./data/MeanRosterData.csv')
 print('Loading player data...')
 games = pd.read_csv('./data/{}/Games{}.csv'.format(season, season)).set_index(['GameID'])
 roster_df = pd.read_csv('./data/{}/Rosters{}.csv'.format(season, season)).set_index(['GameID', 'PlayerID'])
 #games, roster_df = ev.getRosters(files, season)
 #%%
 pdf = ev.getTeamRosters(files)
-av_df = pd.read_csv('./data/AVRosterData.csv').set_index(['Season', 'PlayerID'])
-m_df = pd.read_csv('./data/MeanRosterData.csv').set_index(['Season', 'PlayerID'])
-av_df = av_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
-av_df = av_df.reset_index().set_index(['Season', 'PlayerID', 'TeamID'])
-m_df = m_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
-m_df = m_df.reset_index().set_index(['Season', 'PlayerID', 'TeamID'])
+av_df = pd.read_csv('./data/AVRosterData.csv').set_index(['Season', 'PlayerID', 'TID'])
+m_df = pd.read_csv('./data/MeanRosterData.csv').set_index(['Season', 'PlayerID', 'TID'])
 
 sdf = fl.arrangeFrame(files, season, scaling=None, noinfluence=True)[0]
 sdf1 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['TID', 'OID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
@@ -161,9 +165,9 @@ for idx, grp in av_df.groupby(['Season']):
 print('Getting team scoring data...')
 ts_cols = [col for col in av_df.columns if 'Score' in col] + \
     [col + 'W' for col in av_df.columns if 'Score' in col]
-ts_df = pd.DataFrame(index=av_df.groupby(['Season', 'TeamID']).mean().index,
+ts_df = pd.DataFrame(index=av_df.groupby(['Season', 'TID']).mean().index,
                      columns=ts_cols).astype(np.float)
-for idx, grp in av_df.groupby(['Season', 'TeamID']):
+for idx, grp in av_df.groupby(['Season', 'TID']):
     for col in av_df.columns:
         if 'Score' in col:
             ts_df.loc[idx, [col, col + 'W']] = [grp[col].mean(), np.average(grp[col], weights=grp['Mins'])]
@@ -195,7 +199,7 @@ for col in lin2.columns:
 
 
 #%%
-av_check = ov_perc.merge(av_df[['MinPerc', 'Cat']], on=['Season', 'PlayerID', 'TeamID'])
+av_check = ov_perc.merge(av_df[['MinPerc', 'Cat']], on=['Season', 'PlayerID', 'TID'])
 av_cat = av_check.groupby(['MinPerc', 'Cat']).mean()
 
 av_check = av_check.loc[av_check['MinPerc'] == 4].drop(columns=['MinPerc', 'Cat'])
@@ -211,8 +215,9 @@ prof = prof.loc(axis=0)[4, :]
 prof['ExPlayer'] = [ex_player[p] for p in ex_player if p in prof.index.get_level_values(1)]
 
 #%%
-plt_df = av_df[['Cat', 'PtsPer18', 'eFG%',
-                               '3Pt%', 'RPer18', 'Econ']]
+plt_df = av_df.loc[av_df['MinPerc'] == 4, ['Cat', 'eFG%',
+                               'DefScore', 'Econ']]
+plt_df = plt_df.loc(axis=0)[season, :, :].merge(scale_df.groupby('PlayerID').mean(), on='PlayerID', right_index=True)
 plt_df = plt_df.loc[plt_df['Cat'] != -1]
 pg = sns.PairGrid(plt_df, hue='Cat', palette=sns.husl_palette(len(list(set(plt_df['Cat'])))))
 pg.map_lower(sns.scatterplot)
@@ -220,5 +225,5 @@ pg.map_diag(sns.kdeplot)
 #sns.pairplot(plt_df, hue='Cat', diag_kind=None, palette=sns.husl_palette(len(list(set(plt_df['Cat'])))))
 
 av_seas = av_df.loc(axis=0)[season, :, :].merge(scale_df.groupby('PlayerID').mean(), on='PlayerID', right_index=True)
-
+av_seas = av_seas.loc[av_seas['MinPerc'] == 4]
 

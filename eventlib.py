@@ -193,11 +193,124 @@ def getSingleGameLineups(gid, files, season):
                 line_df.groupby(['O_LineID']).sum().drop(columns=['T_LineID']),
                 line_df.groupby(['T_LineID', 'O_LineID']).sum())
     for col in line_df.columns.drop(['T_LineID', 'O_LineID', 'Mins']):
-        for n in range(2):
+        for n in range(3):
             lsum_dfs[n][col + 'PM'] = lsum_dfs[n][col] - lsum_dfs[n]['O_' + col[2:]] if col[:2] == 'T_' else \
                 lsum_dfs[n][col] - lsum_dfs[n]['T_' + col[2:]]
     
     return ev, lineups, line_df, lsum_dfs
+
+def getGameLineups(files, season):
+    evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
+    evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
+    evp = evp.reset_index().set_index(['GameID', 'EventID'])
+    evp = evp.loc[evp['WTeamID'] == 1140]
+    evp = evp.drop(columns=['X', 'Y', 'Area'])
+    lineup_ids = {}
+    game_df = pd.DataFrame()
+    
+    for (gid, wid, lid), ev in tqdm(evp.groupby(['GameID', 'WTeamID', 'LTeamID'])):
+        ev = ev.loc[ev['EventPlayerID'] != 0]
+        mxepsec = ev['ElapsedSeconds'].max()
+        ov = [0, 1200, 2400]
+        while ov[-1] < mxepsec:
+            ov = ov + [ov[-1] + 300]
+        lns = (pd.DataFrame(index=np.arange(ov[-1]), columns=np.sort(list(set(ev.loc[ev['EventTeamID'] == wid,
+                                                                             'EventPlayerID'].values))),
+                             data=False),
+               pd.DataFrame(index=np.arange(ov[-1]), columns=np.sort(list(set(ev.loc[ev['EventTeamID'] == lid,
+                                                                             'EventPlayerID'].values))),
+                             data=False))
+        for pid, p in ev.groupby(['EventPlayerID']):
+            if pid != 0:
+                poss_subs = np.sort(ov + \
+                    list(p.loc[p['EventSubType'] == 'in', 'ElapsedSeconds'] - .5) + \
+                        list(p.loc[p['EventSubType'] == 'out', 'ElapsedSeconds'] + .5))
+                nev, secs = np.histogram(p['ElapsedSeconds'], poss_subs)
+                secs = secs.astype(int)
+                for n in range(len(nev)):
+                    if nev[n] > 0:
+                        if pid in lns[0].columns:
+                            lns[0].loc[np.logical_and(lns[0].index > secs[n],
+                                                      lns[0].index < secs[n+1]), pid] = True
+                        else:
+                            lns[1].loc[np.logical_and(lns[1].index > secs[n],
+                                                      lns[1].index < secs[n+1]), pid] = True
+        line_df = pd.DataFrame(index=lns[0].index)
+        for tt in range(2):
+            if wid in lineup_ids and tt == 0:
+                lineups = lineup_ids[wid]
+            elif lid in lineup_ids and tt == 1:
+                lineups = lineup_ids[lid]
+            else:
+                lineups = []
+            for idx, row in lns[tt].iterrows():
+                lu = [col for col in lns[tt].columns if row[col]]
+                if len(lu) == 5:
+                    if lu not in lineups:
+                        lineups.append(lu)
+                        lu_id = len(lineups) - 1
+                    else:
+                        lu_id = [i for i, d in enumerate(lineups) if lu == d][0]
+                else:
+                    lu_id = -1
+                if tt == 0:
+                    line_df.loc[idx, 'T_LineID'] = lu_id
+                else:
+                    line_df.loc[idx, 'O_LineID'] = lu_id
+            if tt == 0:
+                lineup_ids[wid] = lineups
+            else:
+                lineup_ids[lid] = lineups
+        for idx, row in ev.iterrows():
+            if row['EventTeamID'] == wid:
+                if 'reb' in row['EventType']:
+                    line_df.loc[row['ElapsedSeconds'], 'T_R'] = 1
+                if 'made' in row['EventType']:
+                    line_df.loc[row['ElapsedSeconds'], 'T_Pt'] = int(row['EventType'][-1])
+                    line_df.loc[row['ElapsedSeconds'], 'T_Shot'] = 1
+                    line_df.loc[row['ElapsedSeconds'], 'T_Poss'] = 1
+                if 'miss' in row['EventType']:
+                    line_df.loc[row['ElapsedSeconds'], 'T_Shot'] = 1
+                    line_df.loc[row['ElapsedSeconds'], 'T_Poss'] = 1
+                if 'turnover' in row['EventType']:
+                    line_df.loc[row['ElapsedSeconds'], 'T_TO'] = 1
+                    line_df.loc[row['ElapsedSeconds'], 'T_Poss'] = 1
+            if row['EventTeamID'] == lid:
+                if 'reb' in row['EventType']:
+                    line_df.loc[row['ElapsedSeconds'], 'O_R'] = 1
+                if 'made' in row['EventType']:
+                    line_df.loc[row['ElapsedSeconds'], 'O_Pt'] = int(row['EventType'][-1])
+                    line_df.loc[row['ElapsedSeconds'], 'O_Shot'] = 1
+                    line_df.loc[row['ElapsedSeconds'], 'O_Poss'] = 1
+                if 'miss' in row['EventType']:
+                    line_df.loc[row['ElapsedSeconds'], 'O_Shot'] = 1
+                    line_df.loc[row['ElapsedSeconds'], 'O_Poss'] = 1
+                if 'turnover' in row['EventType']:
+                    line_df.loc[row['ElapsedSeconds'], 'O_TO'] = 1
+                    line_df.loc[row['ElapsedSeconds'], 'O_Poss'] = 1
+        line_df['Mins'] = 1 / 60
+        line_df = line_df.fillna(0)
+        for lnn in ['T_LineID', 'O_LineID']:
+            opp = 'O_LineID' if 'T_' in lnn else 'T_LineID'
+            lsum_df = line_df.groupby(lnn).sum().drop(columns=opp)
+            for col in lsum_df.columns.drop(['Mins']):
+                lsum_df[col + 'PM'] = lsum_df[col] - lsum_df['O_' + col[2:]] if col[:2] == 'T_' else \
+                    lsum_df[col] - lsum_df['T_' + col[2:]]
+            lsum_df['GameID'] = gid
+            lsum_df = lsum_df.reset_index()
+            if 'O_' in lnn:
+                lsum_df['TID'] = lid
+                lsum_df.columns = \
+                    ['T_' + col[2:] if 'O_' in col else 'O_' + col[2:] if 'T_' in col else col for col in lsum_df.columns]
+            else:
+                lsum_df['TID'] = wid
+            game_df = game_df.append(lsum_df.set_index(['GameID', 'TID', 'T_LineID']))
+    liddf = pd.DataFrame()
+    for key in lineup_ids:
+        tmp = pd.DataFrame(lineup_ids[key])
+        tmp['LineID'] = np.arange(tmp.shape[0])
+        tmp['TID'] = key
+        liddf = liddf.append(tmp.set_index(['TID', 'LineID']))
 
 def getAdvStats(df):
     wdf = pd.DataFrame(index=df.index)
@@ -233,6 +346,7 @@ def getRateStats(df, sdf, pdf):
     wdf['AstScale'] = mdf['Ast'] * scaling
     wdf['PtsScale'] = mdf['Pts'] * scaling
     wdf['RScale'] = (mdf['OR'] + mdf['DR']) * scaling
+    wdf['EloDiff'] = mdf['T_Elo'] - mdf['O_Elo']
     return wdf.dropna()
 
 def getPlayerSeasonStats(df):

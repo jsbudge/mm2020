@@ -347,6 +347,8 @@ def getRateStats(df, sdf, pdf):
     wdf['PtsScale'] = mdf['Pts'] * scaling
     wdf['RScale'] = (mdf['OR'] + mdf['DR']) * scaling
     wdf['EloDiff'] = mdf['T_Elo'] - mdf['O_Elo']
+    wdf['R%'] = (mdf['OR'] + mdf['DR']) / (mdf['T_OR'] + mdf['T_DR'])
+    wdf['Pts%'] = mdf['Pts'] / mdf['T_Score']
     return wdf.dropna()
 
 def getPlayerSeasonStats(df):

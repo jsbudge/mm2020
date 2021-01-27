@@ -88,20 +88,19 @@ savdf = st.getSeasonalStats(sdf, strat='relelo')
 pdf = ev.getTeamRosters(files)
 #%%
 
-adv_df = pd.read_csv('./data/AVRosterData.csv').set_index(['Season', 'PlayerID', 'TID'])
 av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
-av_df = av_df.drop_duplicates()
+av_df = av_df.loc[np.logical_not(av_df.index.duplicated())]
 av_df['MinPerc'] = np.digitize(av_df['Mins'], 
                                 np.concatenate(([0], np.percentile(av_df['Mins'], [25, 50, 75]),
                                                 [av_df['Mins'].max() + 1])))
 ov_perc = av_df.copy()
 for idx, grp in ov_perc.groupby(['Season']):
     ov_perc.loc[grp.index] = (grp - grp.mean()) / grp.std()
-ov_perc = ov_perc.drop(columns=['Mins', 'DayNum', 'MinPerc']).sort_index()
+ov_perc = ov_perc.drop(columns=['Mins', 'MinPerc']).sort_index()
 #%%
     
 print('Running scoring algorithms...')
-n_clusters = 5
+n_clusters = 15
 #ov_perc[['FoulPer18', 'TOPer18']] = -ov_perc[['FoulPer18', 'TOPer18']]
 stat_cats = KernelPCA(n_components=n_clusters)
 rat_df = ov_perc.merge(savdf[['T_OffRat', 'T_DefRat']],
@@ -222,7 +221,7 @@ prof = prof.loc(axis=0)[4, :]
 prof['ExPlayer'] = [ex_player[p] for p in ex_player if p in prof.index.get_level_values(1)]
 
 #%%
-plt_df = av_df.loc[av_df['MinPerc'] == 4, ['Cat', 'Blk', 'Pts',
+plt_df = av_df.loc[av_df['MinPerc'] == 4, ['Cat', 'DWS', 'OWS',
                                'DefScore', 'OffScore', '2WayScore']]
 plt_df = plt_df.loc(axis=0)[season, :, :]
 plt_df = plt_df.loc[plt_df['Cat'] != -1]

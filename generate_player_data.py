@@ -16,35 +16,36 @@ from difflib import get_close_matches
 
 files = st.getFiles()
 pdf = ev.getTeamRosters(files)
-#Grab the data from sportsreference
-seas_map = {'2014-15': 2015, '2015-16': 2016,
-                                   '2016-17': 2017, '2017-18': 2018,
-                                   '2018-19': 2019, '2019-20': 2020}
-play_df = pd.DataFrame()
-for season in [2015, 2016, 2017, 2018, 2019, 2020]:
-    tm = Teams(season)
-    for team in tqdm(tm):
-        ros = team.roster
-        for play in ros.players:
-            if play_df.shape[0] > 0:
-                if play.player_id not in play_df['player_id']:
-                    t = play.dataframe
-                    t = t.reset_index().fillna(0)
-                    t['level_0'] = t['level_0'].map(seas_map)
-                    t['PlayerName'] = play.name
-                    t['TNme'] = team.name
-                    play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
-                else:
-                    play_df.loc[np.logical_and(play_df['player_id'] == play.player_id,
-                                               play_df['level_0'] == season), 'TNme'] = team.name
-            else:
-                t = play.dataframe
-                t = t.reset_index().fillna(0)
-                t['level_0'] = t['level_0'].map(seas_map)
-                t['PlayerName'] = play.name
-                t['TNme'] = team.name
-                play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
+# #Grab the data from sportsreference
+# seas_map = {'2014-15': 2015, '2015-16': 2016,
+#                                    '2016-17': 2017, '2017-18': 2018,
+#                                    '2018-19': 2019, '2019-20': 2020}
+# play_df = pd.DataFrame()
+# for season in [2015, 2016, 2017, 2018, 2019, 2020]:
+#     tm = Teams(season)
+#     for team in tqdm(tm):
+#         ros = team.roster
+#         for play in ros.players:
+#             if play_df.shape[0] > 0:
+#                 if play.player_id not in play_df['player_id']:
+#                     t = play.dataframe
+#                     t = t.reset_index().fillna(0)
+#                     t['level_0'] = t['level_0'].map(seas_map)
+#                     t['PlayerName'] = play.name
+#                     t['TNme'] = team.name
+#                     play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
+#                 else:
+#                     play_df.loc[np.logical_and(play_df['player_id'] == play.player_id,
+#                                                play_df['level_0'] == season), 'TNme'] = team.name
+#             else:
+#                 t = play.dataframe
+#                 t = t.reset_index().fillna(0)
+#                 t['level_0'] = t['level_0'].map(seas_map)
+#                 t['PlayerName'] = play.name
+#                 t['TNme'] = team.name
+#                 play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
 
+play_df = pd.read_csv('test_play_df.csv')
 #%%
 #Rearrange things to my liking
 sdf = play_df.copy()
@@ -63,43 +64,94 @@ sdf['Season'] = sdf['Season'].astype(int)
 sdf['PlayerID'] = -1
 sdf['TID'] = -1
 sdf['FullName'] = '0'
-curr_tid = 1101
 close_ones = []
 for idx, grp in tqdm(sdf.groupby(['TNme', 'PlayerName'])):
     link = pdf.loc[pdf['FullName'] == idx[1]]
-    try:
-        if len(link) > 1:
-            continue
-            link = link.loc[abs(link['TeamID'] - curr_tid) == abs(link['TeamID'] - curr_tid).min()]
+    if len(link) == 1:
         ids = [link.index.values[0], link['TeamID'].values[0], link['FullName'].values[0]]
-        curr_tid = link['TeamID'].values[0]
-    except:
-        continue
-        # try:
-        #     poss_match = get_close_matches(idx[1], pdf['FullName'])[0]
-        #     link = pdf.loc[pdf['FullName'] == poss_match]
-        #     ids = [link.index.values[0], link['TeamID'].values[0], link['FullName'].values[0]]
-        #     close_ones.append(ids)
-        #     curr_tid = link['TeamID'].values[0]
-        # except:
-        #     print('Unknown player ' + idx[1])
-        #     ids = [-1, -1, '0']
-    sdf.loc[grp.index, ['PlayerID', 'TID', 'FullName']] = ids
+        sdf.loc[grp.index, ['PlayerID', 'TID', 'FullName']] = ids
 
 abbs = {}
 for idx, grp in sdf.groupby(['TNme']):
     abbs[idx] = grp.loc[grp['TID'] != -1, 'TID'].mode().values[0]
-for idx, row in sdf.iterrows():
-    sdf.loc[idx, 'TID'] = abbs[row['TNme']]
-    if row['PlayerID'] == -1:
-        poss_matches = get_close_matches(row['PlayerName'], pdf.loc[pdf['TeamID'] == abbs[row['TNme']],
-                                                                    'FullName'])
-        if len(poss_matches) > 0:
-            match = pdf.loc[np.logical_and(pdf['FullName'] == poss_matches[0],
-                                           pdf['TeamID'] == abbs[row['TNme']])]
-            sdf.loc[idx, ['FullName', 'PlayerID']] = [match['FullName'].values[0],
-                                                      match.index.values[0]]
-            
+    sdf.loc[grp.index, 'TID'] = abbs[idx]
+for idx, grp in tqdm(sdf.loc[sdf['PlayerID'] == -1].groupby(['TID', 'PlayerName'])):
+    ids = ['0', -1]
+    match = pdf.loc[np.logical_and(pdf['FullName'] == idx[1],
+                                   pdf['TeamID'] == idx[0])]
+    if len(match) > 0:
+        if len(match) == 1:
+            ids = [match['FullName'].values[0], match.index.values[0]]
+        else:
+            ids = []
+            n_blanks = int(grp.shape[0] / match.shape[0])
+            n_overflow = grp.shape[0] % match.shape[0]
+            for m_idx, m_row in match.iterrows():
+                for mm in range(n_blanks):
+                    ids.append([m_row['FullName'], m_idx])
+            for mm in range(n_overflow):
+                ids.append([m_row['FullName'], m_idx])
+    else:
+        lastname = idx[1].split(' ')[-1]
+        if lastname in ['Jr.', 'Jr', 'III', 'II', 'V', 'IV']:
+            lastname = idx[1].split(' ')[-2]
+        poss_matches = get_close_matches(lastname, 
+                                                 pdf.loc[pdf['TeamID'] == idx[0],
+                                                         'LastName'], cutoff=.7)
+        if len(poss_matches) == 1:
+            match = pdf.loc[np.logical_and(pdf['LastName'] == poss_matches[0],
+                                       pdf['TeamID'] == idx[0])]
+            ids = [match['FullName'].values[0], match.index.values[0]]
+        elif len(poss_matches) > 1:
+            poss_matches = get_close_matches(idx[1], 
+                                             pdf.loc[pdf['TeamID'] == idx[0],
+                                             'FullName'])
+            if len(poss_matches) == 1:
+                match = pdf.loc[np.logical_and(pdf['FullName'] == poss_matches[0],
+                                               pdf['TeamID'] == idx[0])]
+                if len(match) == 1:
+                    ids = [match['FullName'].values[0], match.index.values[0]]
+            elif len(poss_matches) > 1:
+                if poss_matches[0] == poss_matches[1]:
+                    match = pdf.loc[np.logical_and(pdf['FullName'] == poss_matches[0],
+                                                   pdf['TeamID'] == idx[0])]
+                    ids = []
+                    n_blanks = int(grp.shape[0] / match.shape[0])
+                    n_overflow = grp.shape[0] % match.shape[0]
+                    for m_idx, m_row in match.iterrows():
+                        for mm in range(n_blanks):
+                            ids.append([m_row['FullName'], m_idx])
+                    for mm in range(n_overflow):
+                        ids.append([m_row['FullName'], m_idx])
+                else:
+                    match = pdf.loc[np.logical_and(pdf['FullName'] == poss_matches[0],
+                                                   pdf['TeamID'] == idx[0])]
+                    if len(match) == 1:
+                        ids = [match['FullName'].values[0], match.index.values[0]]
+            else:
+                #Some of the names are switched
+                rev_name = pdf.loc[pdf['TeamID'] == idx[0], 'LastName'] + \
+                    ' ' + pdf.loc[pdf['TeamID'] == idx[0], 'FirstName']
+                poss_matches = get_close_matches(idx[1], rev_name)
+                if len(poss_matches) > 0:
+                    for m in poss_matches:
+                        match = pdf.loc[rev_name.index[rev_name == m]]
+                        if len(match) > 0:
+                            ids = [match['FullName'].values[0], match.index.values[0]]
+    sdf.loc[grp.index, ['FullName', 'PlayerID']] = ids
+
+unmatched = []
+for idx, row in pdf.iterrows():
+    if idx not in sdf['PlayerID'].values:
+        unmatched.append(row)
+unmatched = pd.DataFrame(unmatched)
+
+nid = -2
+for idx, grp in sdf.loc[sdf['PlayerID'] == -1].groupby(['PlayerName', 'TID']):
+    sdf.loc[grp.index, 'PlayerID'] = nid
+    nid -= 1
+#%%
+
 sdf = sdf.set_index(['Season', 'PlayerID', 'TID'])
 sdf = sdf.drop(columns=['conference', 'player_id', 'team_abbreviation', 
                         'PlayerName', 'FullName', 'TNme'])

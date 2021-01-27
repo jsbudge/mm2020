@@ -570,7 +570,7 @@ def calcElo(files, K=35, margin=4.5):
     wdf2['T_Elo'], wdf2['O_Elo'] = wdf['O_Elo'], wdf['T_Elo']
     wdf = wdf.append(wdf2, ignore_index=True)
     wdf = wdf.drop(columns=['WLoc', 'ScoreDiff'])
-    wdf.to_csv('elo_file.csv', index=False)
+    wdf.to_csv('./data/elo_file.csv', index=False)
     return wdf
 
 '''
@@ -585,7 +585,7 @@ Returns:
     df: DataFrame - df with T_Rank and O_Rank columns added.
 '''
 def addElos(df):
-    rdf = pd.read_csv('elo_file.csv')
+    rdf = pd.read_csv('./data/elo_file.csv')
     df = df.merge(rdf, on=['Season', 'TID', 'OID', 'DayNum'])
     return df
 

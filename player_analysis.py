@@ -48,19 +48,27 @@ season = 2016
 # m_df = pd.DataFrame()
 # pdf = ev.getTeamRosters(files)
 # for seas in [2015, 2016, 2017, 2018, 2019, 2020]:
-#     #sdf = fl.arrangeFrame(files, season, scaling=None, noinfluence=True)[0]
+#     sdf = fl.arrangeFrame(files, season, scaling=None, noinfluence=True)[0]
 #     games = pd.read_csv('./data/{}/Games{}.csv'.format(seas, seas)).set_index(['GameID'])
-#     rosters = pd.read_csv('./data/{}/Rosters{}.csv'.format(seas, seas)).set_index(['GameID', 'PlayerID'])
-#     #games, rosters = ev.getRosters(files, seas)
-#     #games.to_csv('./data/{}/Games{}.csv'.format(seas, seas))
-#     #rosters.to_csv('./data/{}/Rosters{}.csv'.format(seas, seas))
-#     sum_df = rosters.groupby(['PlayerID']).sum()
+#     roster_df = pd.read_csv('./data/{}/Rosters{}.csv'.format(seas, seas)).set_index(['GameID', 'PlayerID'])
+#     sdf1 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['TID', 'OID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
+#     sdf2 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['OID', 'TID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
+#     sdf = sdf1.rename(columns={'WTeamID': 'TID'}).set_index(['GameID', 'TID']).append( \
+#         sdf2.rename(columns={'LTeamID': 'TID'}).set_index(['GameID', 'TID'])).drop( \
+#         columns=['DayNum', 'WTeamID', 'LTeamID']).sort_index()
+                                                                                   
+#     scale_df = ev.getRateStats(roster_df, sdf, pdf)
+#     roster_df = roster_df.merge(scale_df, on=['GameID', 'PlayerID'])
+#     #games, roster_df = ev.getRosters(files, seas)
+#     games.to_csv('./data/{}/Games{}.csv'.format(seas, seas))
+#     roster_df.to_csv('./data/{}/Rosters{}.csv'.format(seas, seas))
+#     sum_df = roster_df.groupby(['PlayerID']).sum()
 #     tmp_df = ev.getAdvStats(sum_df)
 #     tmp_df['Season'] = seas
 #     tmp_df['Mins'] = sum_df['Mins']
 #     tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
 #     av_df = av_df.append(tmp_df)
-#     tmp_df = rosters.groupby(['PlayerID']).mean()
+#     tmp_df = roster_df.groupby(['PlayerID']).mean()
 #     tmp_df['Season'] = seas
 #     tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
 #     m_df = m_df.append(tmp_df)
@@ -75,49 +83,48 @@ season = 2016
 print('Loading player data...')
 games = pd.read_csv('./data/{}/Games{}.csv'.format(season, season)).set_index(['GameID'])
 roster_df = pd.read_csv('./data/{}/Rosters{}.csv'.format(season, season)).set_index(['GameID', 'PlayerID'])
-#games, roster_df = ev.getRosters(files, season)
-#%%
+sdf = fl.arrangeFrame(files, scaling=None, noinfluence=True)[0]
+savdf = st.getSeasonalStats(sdf, strat='relelo')
 pdf = ev.getTeamRosters(files)
-av_df = pd.read_csv('./data/AVRosterData.csv').set_index(['Season', 'PlayerID', 'TID'])
-m_df = pd.read_csv('./data/MeanRosterData.csv').set_index(['Season', 'PlayerID', 'TID'])
-
-sdf = fl.arrangeFrame(files, season, scaling=None, noinfluence=True)[0]
-sdf1 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['TID', 'OID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
-sdf2 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['OID', 'TID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
-sdf = sdf1.rename(columns={'WTeamID': 'TID'}).set_index(['GameID', 'TID']).append( \
-    sdf2.rename(columns={'LTeamID': 'TID'}).set_index(['GameID', 'TID'])).drop( \
-    columns=['DayNum', 'WTeamID', 'LTeamID']).sort_index()
-                                                                               
-scale_df = ev.getRateStats(roster_df, sdf, pdf)
 #%%
-#av_df = av_df.loc[av_df['Mins'] > 18]
+
+adv_df = pd.read_csv('./data/AVRosterData.csv').set_index(['Season', 'PlayerID', 'TID'])
+av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
+av_df = av_df.drop_duplicates()
 av_df['MinPerc'] = np.digitize(av_df['Mins'], 
                                 np.concatenate(([0], np.percentile(av_df['Mins'], [25, 50, 75]),
                                                 [av_df['Mins'].max() + 1])))
-# av_df['Exp'] = av_df.index.get_level_values(0)
-# av_df['Exp'] = av_df['Exp'].groupby(['PlayerID']).apply(lambda x: abs(x - x.min()))
-ov_perc = (av_df - av_df.mean()) / av_df.std()
-for idx, grp in av_df.groupby(['Season']):
+ov_perc = av_df.copy()
+for idx, grp in ov_perc.groupby(['Season']):
     ov_perc.loc[grp.index] = (grp - grp.mean()) / grp.std()
-ov_perc = ov_perc.drop(columns=['Mins', 'MinPerc']).sort_index()
-
-# sdf = fl.arrangeFrame(files, scaling=None, noinfluence=True)[0].loc(axis=0)[:, season, :, :]
-# savdf = st.getSeasonalStats(sdf, strat='relelo')
+ov_perc = ov_perc.drop(columns=['Mins', 'DayNum', 'MinPerc']).sort_index()
 #%%
     
 print('Running scoring algorithms...')
-ov_perc[['FoulPer18', 'TOPer18']] = -ov_perc[['FoulPer18', 'TOPer18']]
-off_cons = np.array([1.1, 1.1, 0, 0, 1, 0, .7, 0, 0, .2, .2, 0, 0, 1, 0, 1, .5, 1, .8])
-def_cons = np.array([0, 0, 1.4, 1.4, 0, 1.3, 0, 1, .3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+n_clusters = 5
+#ov_perc[['FoulPer18', 'TOPer18']] = -ov_perc[['FoulPer18', 'TOPer18']]
+stat_cats = KernelPCA(n_components=n_clusters)
+rat_df = ov_perc.merge(savdf[['T_OffRat', 'T_DefRat']],
+                       on=['Season', 'TID'],
+                       right_index=True)
+merge_df = pd.DataFrame(data=stat_cats.fit_transform(ov_perc), index=ov_perc.index)
+#merges = [[col for n, col in enumerate(ov_perc.columns) if stat_cats.labels_[n] == q] for q in range(n_clusters)]
+for idx, grp in merge_df.groupby(['Season']):
+    merge_df.loc[grp.index] = (grp - grp.mean()) / grp.std()
+m_cov = merge_df.merge(savdf[['T_OffRat', 'T_DefRat']], on=['Season', 
+                                   'TID'], right_index=True).cov()
+cov_cols = [col for col in m_cov.columns if type(col) == int]
+off_cons = m_cov.loc['T_OffRat', cov_cols].values
+def_cons = m_cov.loc['T_DefRat', cov_cols].values
 adj_mins = av_df['Mins']
-adj_mins = adj_mins.loc[ov_perc.index]
+adj_mins = adj_mins.loc[merge_df.index]
 aug_df = pd.DataFrame(index=av_df.index)
 
-aug_df['OffScore'] = np.sum(ov_perc * off_cons, axis=1) / sum(off_cons)
-aug_df['DefScore'] = np.sum(ov_perc * def_cons, axis=1) / sum(def_cons)
-aug_df['2WayScore'] = 1 / abs(aug_df['OffScore'] - aug_df['DefScore'])**(1/40) + (aug_df['OffScore'] + aug_df['DefScore'])
-aug_df['StrengthScore'] = np.max(ov_perc, axis=1) - np.mean(ov_perc, axis=1)
-aug_df['WeakScore'] = abs(np.min(ov_perc, axis=1) - np.mean(ov_perc, axis=1))
+aug_df['OffScore'] = np.sum(merge_df * off_cons, axis=1) / sum(off_cons)
+aug_df['DefScore'] = np.sum(merge_df * def_cons, axis=1) / sum(def_cons)
+aug_df['2WayScore'] = 1 / abs(aug_df['OffScore'] - aug_df['DefScore'])**(1/2)
+aug_df['StrengthScore'] = np.max(merge_df, axis=1) - np.mean(merge_df, axis=1)
+aug_df['WeakScore'] = abs(np.min(merge_df, axis=1) - np.mean(merge_df, axis=1))
 aug_df['BalanceScore'] = np.sqrt(aug_df['StrengthScore']**2 + aug_df['WeakScore']**2)
 #av_df['Mins'] = adj_mins * 40
 
@@ -125,7 +132,7 @@ aug_df['BalanceScore'] = np.sqrt(aug_df['StrengthScore']**2 + aug_df['WeakScore'
 kpca = KernelPCA(n_components=3)
 
 for n in range(1, 5):
-    tmp_df = ov_perc.loc[av_df['MinPerc'] == n]
+    tmp_df = merge_df.loc[av_df['MinPerc'] == n]
     pca_df = pd.DataFrame(index=tmp_df.index, data=kpca.fit_transform(tmp_df))
     cat_perc = pca_df.copy()
     print('Applying clustering...')
@@ -215,15 +222,15 @@ prof = prof.loc(axis=0)[4, :]
 prof['ExPlayer'] = [ex_player[p] for p in ex_player if p in prof.index.get_level_values(1)]
 
 #%%
-plt_df = av_df.loc[av_df['MinPerc'] == 4, ['Cat', 'eFG%',
-                               'DefScore', 'Econ']]
-plt_df = plt_df.loc(axis=0)[season, :, :].merge(scale_df.groupby('PlayerID').mean(), on='PlayerID', right_index=True)
+plt_df = av_df.loc[av_df['MinPerc'] == 4, ['Cat', 'Blk', 'Pts',
+                               'DefScore', 'OffScore', '2WayScore']]
+plt_df = plt_df.loc(axis=0)[season, :, :]
 plt_df = plt_df.loc[plt_df['Cat'] != -1]
 pg = sns.PairGrid(plt_df, hue='Cat', palette=sns.husl_palette(len(list(set(plt_df['Cat'])))))
 pg.map_lower(sns.scatterplot)
 pg.map_diag(sns.kdeplot)
 #sns.pairplot(plt_df, hue='Cat', diag_kind=None, palette=sns.husl_palette(len(list(set(plt_df['Cat'])))))
 
-av_seas = av_df.loc(axis=0)[season, :, :].merge(scale_df.groupby('PlayerID').mean(), on='PlayerID', right_index=True)
+av_seas = av_df.loc(axis=0)[season, :, :]
 av_seas = av_seas.loc[av_seas['MinPerc'] == 4]
 

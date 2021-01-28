@@ -20,7 +20,7 @@ import featurelib as feat
 import seaborn as sns
 import eventlib as ev
 from sklearn.preprocessing import StandardScaler, PowerTransformer, PolynomialFeatures, OneHotEncoder
-from sklearn.decomposition import KernelPCA
+from sklearn.decomposition import TruncatedSVD, KernelPCA
 import sklearn.cluster as cl
 from scipy.stats import multivariate_normal as mvn
 from scipy.stats import iqr, norm
@@ -90,10 +90,15 @@ adv_tdf = st.getTourneyStats(tdf, sdf, files)
 pdf = ev.getTeamRosters(files)
 #%%
 
+n_clusters = 20
+n_kpca_comps = 6
+n_player_types = 5
+minbins = np.array([0, 181, 456, 1160, 1649])
 av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
 av_df = av_df.loc[np.logical_not(av_df.index.duplicated())]
 av_df = av_df.loc(axis=0)[:2019, :, :]
-adv_df, phys_df, score_df, base_df = ev.splitStats(av_df, savdf)
+adv_df, phys_df, score_df, base_df = ev.splitStats(av_df, savdf, add_stats=['poss'],
+                                                   minbins = minbins)
 
 ov_perc = adv_df.copy()
 for idx, grp in ov_perc.groupby(['Season']):
@@ -102,46 +107,47 @@ ov_perc = ov_perc.sort_index()
 #%%
     
 print('Running scoring algorithms...')
-n_clusters = 15
+
 #ov_perc[['FoulPer18', 'TOPer18']] = -ov_perc[['FoulPer18', 'TOPer18']]
-stat_cats = KernelPCA(n_components=n_clusters)
-merge_df = ov_perc #pd.DataFrame(data=stat_cats.fit_transform(ov_perc), index=ov_perc.index)
-#merges = [[col for n, col in enumerate(ov_perc.columns) if stat_cats.labels_[n] == q] for q in range(n_clusters)]
+stat_cats = TruncatedSVD(n_components=n_clusters)
+merge_df = pd.DataFrame(data=stat_cats.fit_transform(ov_perc.drop(columns=['SoS'])),
+                        columns=['comp_{}'.format(n) for n in range(n_clusters)],
+                        index=ov_perc.index)
 for idx, grp in merge_df.groupby(['Season']):
     merge_df.loc[grp.index] = (grp - grp.mean()) / grp.std()
 m_cov = merge_df.merge(savdf[['T_OffRat', 'T_DefRat']], on=['Season', 
-                                   'TID'], right_index=True).cov()
+                                    'TID'], right_index=True).cov()
 cov_cols = [col for col in m_cov.columns if 'T_' not in col]
+shift_cons = m_cov.loc['T_OffRat', cov_cols].values
 off_cons = m_cov.loc['T_OffRat', cov_cols].values
 def_cons = m_cov.loc['T_DefRat', cov_cols].values
-adj_mins = phys_df['Mins']
-adj_mins = adj_mins.loc[merge_df.index]
+shift_cons[abs(off_cons) - abs(def_cons) < 0] = 1
+shift_cons[abs(def_cons) - abs(off_cons) < 0] = -1
+off_cons[shift_cons == 1] = 0
+def_cons[shift_cons == -1] = 0
 aug_df = pd.DataFrame(index=adv_df.index)
 
-aug_df['OffScore'] = np.sum(merge_df * off_cons, axis=1) / sum(off_cons)
+aug_df['OffScore'] = np.sum(merge_df * off_cons, axis=1) / abs(sum(off_cons))
 aug_df['DefScore'] = np.sum(merge_df * def_cons, axis=1) / sum(def_cons)
-aug_df['2WayScore'] = 1 / abs(aug_df['OffScore'] - aug_df['DefScore'])**(1/2)
-aug_df['StrengthScore'] = np.max(merge_df, axis=1) - np.mean(merge_df, axis=1)
-aug_df['WeakScore'] = abs(np.min(merge_df, axis=1) - np.mean(merge_df, axis=1))
-aug_df['BalanceScore'] = np.sqrt(aug_df['StrengthScore']**2 + aug_df['WeakScore']**2)
-#adv_df['Mins'] = adj_mins * 40
+aug_df['OverallScore'] = (aug_df['OffScore'] + aug_df['DefScore'] + 3) * adv_df['SoS']
+aug_df['BalanceScore'] = 1 / abs(aug_df['OffScore'] - aug_df['DefScore'])**(1/2)
 
 #CLUSTERING TO FIND PLAYER TYPES
-kpca = KernelPCA(n_components=3)
+kpca = KernelPCA(n_components=n_kpca_comps)
 
-for n in range(1, 5):
-    tmp_df = merge_df.loc[phys_df['MinPerc'] == n]
+for min_class in list(set(phys_df['MinPerc'].values)):
+    tmp_df = merge_df.loc[phys_df['MinPerc'] == min_class]
     pca_df = pd.DataFrame(index=tmp_df.index, data=kpca.fit_transform(tmp_df))
     cat_perc = pca_df.copy()
     print('Applying clustering...')
-    n_types = 5
-    clalg = cl.Birch(n_clusters=n_types, threshold=0.3755102040816327, branching_factor=94)
+    n_types = n_player_types
+    clalg = cl.Birch(n_clusters=n_player_types, threshold=0.3755102040816327, branching_factor=94)
     cat = clalg.fit_predict(pca_df)
     shape_sz = pca_df.shape[0]
     big_cat = Counter(cat)
     #Get number of clusters that best distinguishes between players
     def min_func(x):
-        clalg = cl.Birch(n_clusters=n_types, threshold=x[0], branching_factor=int(x[1]))
+        clalg = cl.Birch(n_clusters=n_player_types, threshold=x[0], branching_factor=int(x[1]))
         cat = clalg.fit_predict(pca_df)
         big_cat = Counter(cat)
         return np.linalg.norm([big_cat[t] - shape_sz for t in big_cat])
@@ -201,10 +207,38 @@ for l in line[1]:
 for col in lin2.columns:
     if 'Per18' not in col:
         lin2[col] = lin2[col] / 5
-
+        
 #%%
-plt_df = adv_df.loc[phys_df['MinPerc'] == 4, ['Cat', 'DWS', 'OWS',
-                               'DefScore', 'OffScore', '2WayScore']]
+#Some example players from each segment of MinPerc
+
+exdf = adv_df.merge(phys_df['MinPerc'], on=['Season', 'PlayerID', 'TID']).reset_index()
+ex_players = pd.DataFrame()
+best_players = pd.DataFrame()
+for idx, grp in exdf.groupby(['MinPerc', 'Cat']):
+    vals = grp.drop(columns = [col for col in grp.columns if 'Score' in col] + \
+                    ['Season', 'PlayerID', 'TID', 'Cat', 'MinPerc'])
+    vals = (vals - vals.mean()) / vals.std()
+    dists = np.linalg.norm(vals, axis=1)
+    player = grp.loc[dists == dists.min()]
+    if player['PlayerID'].values[0] > 0:
+        pid = pdf.loc[player['PlayerID'], 'FullName'].values[0]
+        ex_players = ex_players.append(pd.DataFrame(list(player.values.flatten()) + \
+                                                    [pid]).T)
+    player = grp.loc[grp['CatScore'] == grp['CatScore'].max()]
+    if player['PlayerID'].values[0] > 0:
+        pid = pdf.loc[player['PlayerID'], 'FullName'].values[0]
+        best_players = best_players.append(pd.DataFrame(list(player.values.flatten()) + \
+                                                    [pid]).T)
+ex_players.columns = list(exdf.columns) + ['PlayerName']
+ex_players = ex_players.set_index(['MinPerc', 'Cat'])
+best_players.columns = list(exdf.columns) + ['PlayerName']
+best_players = best_players.set_index(['MinPerc', 'Cat'])
+    
+        
+#%%
+
+plt_df = adv_df.loc[phys_df['MinPerc'] == 3, ['Cat', 'DWS', 'OWS',
+                               'DefScore', 'OffScore', 'BalanceScore']]
 plt_df = plt_df.loc(axis=0)[season, :, :]
 plt_df = plt_df.loc[plt_df['Cat'] != -1]
 pg = sns.PairGrid(plt_df, hue='Cat', palette=sns.husl_palette(len(list(set(plt_df['Cat'])))))
@@ -212,7 +246,8 @@ pg.map_lower(sns.scatterplot)
 pg.map_diag(sns.kdeplot)
 
 #%%
-tourn_df = ts_df.merge(adv_tdf, on=['Season', 'TID'])[['OffScoreW', 'DefScoreW', 'T_RoundRank', 'T_FinalElo', 'T_Seed', 'CatScoreW']]
+
+tourn_df = ts_df.merge(adv_tdf, on=['Season', 'TID'])[['T_FinalRank', 'DefScoreW', 'OffScoreW', 'OverallScoreW', 'T_RoundRank', 'T_FinalElo', 'T_Seed', 'CatScoreW']]
 pg = sns.PairGrid(tourn_df, hue='T_RoundRank', palette=sns.husl_palette(len(list(set(tourn_df['T_RoundRank'])))))
 pg.map_lower(sns.scatterplot, size=tourn_df['T_RoundRank'])
 pg.map_diag(sns.kdeplot)

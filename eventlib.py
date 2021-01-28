@@ -23,7 +23,16 @@ def all_equal(i, q):
 poss_breaks = np.array([0, 1200, 2400, 2700, 3000, 3300, 3600, 3900, 4200])
 
 '''
+getRosters
 Gets stats for every player in every game.
+Inputs:
+    files - (dict) Feeder files from statslib.
+    season - (int) End Year of season (i.e., for 2017-18 season, this would be 2018)
+Returns:
+    teams - (DataFrame) Frame of game ids with team ids and daynums for
+                        correct association of games with stats.
+    evst - (DataFrame) Frame of all the stats for each player, arranged by season
+                        and team.
 '''
 def getRosters(files, season):
     evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
@@ -82,6 +91,23 @@ def getRosters(files, season):
 def getEvents(files, season):
     return pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
 
+'''
+getSingleGameLineups
+Gets stats for lineups in a single game.
+Inputs:
+    gid - (int) GameID of single game to look at.
+    files - (dict) Feeder files from statslib.
+    season - (int) End Year of season (i.e., for 2017-18 season, this would be 2018)
+Returns:
+    ev - (DataFrame) Frame of all events recorded during the game.
+    lineups - (list) List with two dicts inside, containing the PlayerIDs for
+                        all players in the indicated lineup. LineupIDs are used
+                        as the keys to each dict.
+    line_df - (DataFrame) Frame of second-by-second events taken by each lineup.
+    lsum_dfs - (tuple) Tuple of DataFrames, giving the stats of each lineup. Each
+                        tuple entry is the frame for one team's lineups, the last
+                        being the intersection of both lineups.
+'''
 def getSingleGameLineups(gid, files, season):
     evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
     evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
@@ -312,6 +338,15 @@ def getGameLineups(files, season):
         tmp['TID'] = key
         liddf = liddf.append(tmp.set_index(['TID', 'LineID']))
 
+'''
+getAdvStats
+Given a raw stat frame, gives some more advanced statistics.
+Inputs:
+    df - (DataFrame) Frame of basic stats, taken from getRosters above.
+Returns:
+    wdf - (DataFrame) Frame with advanced statistics, using the same indexes as
+                        df.
+'''
 def getAdvStats(df):
     wdf = pd.DataFrame(index=df.index)
     mins = df['Mins']
@@ -337,10 +372,35 @@ def getAdvStats(df):
     wdf['FT%'] = df['FTM'] / df['FTA']
     return wdf.dropna()
 
-def splitStats(df, sdf):
-    df['MinPerc'] = np.digitize(df['Mins'], 
-                                    np.concatenate(([0], np.percentile(df['Mins'], [25, 50, 75]),
-                                                    [df['Mins'].max() + 1])))
+'''
+splitStats
+Arranges internet data to be of most use.
+Inputs:
+    df - (DataFrame) Frame from internet data, generally taken from InternetPlayerData.csv.
+    sdf - (DataFrame) Frame of seasonal stats, from statslib's getSeasonalStats.
+    add_stats - (list) List of additional options:
+                            mins: Get stats adjusted for minutes played.
+                            poss: Get stats adjusted for possessions played.
+                        An empty list will not have any of these additional stats.
+    minbins - (int) or (list) If an int, the number of bins to use in MinPerc,
+                    divided evenly. If a list, specifies the bins used for MinPerc binning.
+Returns:
+    adv_df - (DataFrame) Frame of advanced stats.
+    phys_df - (DataFrame) Frame of housekeeping stats, such as height, weight, and
+                            minutes played.
+    score_df - (DataFrame) Frame of overall scoring stats. May not return anything.
+    base_df - (DataFrame) Frame of basic stats, or everything not in the other
+                            frames.
+    Each frame will have indexes equal to df.
+'''
+def splitStats(df, sdf, add_stats=[], minbins=None):
+    if minbins is not None:
+        if type(minbins) == int:
+            cats = np.percentile(df['Mins'], np.linspace(0, 100, minbins+1))
+            cats[-1] = cats[-1] + 1
+        else:
+            cats = minbins
+    df['MinPerc'] = np.digitize(df['Mins'], cats)
     df.loc[df['GP'] == 0, 'GP'] = 1
     df.loc[df['FGA'] == 0, 'FGA'] = 1
     df['MinsPerGame'] = df['Mins'] / df['GP']
@@ -348,25 +408,28 @@ def splitStats(df, sdf):
     adv_df = df[['Ast%', 'Blk%', 'BPM', 'DBPM', 'DR%', 'DWS', 'eFG%', 'FG%', 
                  'FT/A', 'FT%', 'OBPM', 'OR%', 'OWS', 'PER', 'PtsProd',
                  'Stl%', '3/2Rate', 'FG3%', 'R%', 'TS%', 'TO%', 'FG2%', 'Usage%',
-                 'WS']]
-    adv_df['Econ'] = df['Ast'] + df['Stl'] - df['TO']
-    adv_df['PPS'] = (df['Pts'] - df['FTM']) / df['FGA']
-    adv_df['GameSc'] = 40 * df['eFG%'] + 2 * df['R%'] + 15 * df['FT/A'] + 25 - 2.5 * df['TO%']
-    adv_df['SoS'] = mdf['T_SoS']
-    phys_df = df[['Pos', 'Height', 'Weight', 'GP', 'GS', 'Mins', 'MinPerc', 'MinsPerGame']]
-    phys_df['T_Poss'] = mdf['T_Poss']
-    score_df = df[[col for col in df if 'Score' in col]]
+                 'WS']].copy()
+    adv_df['Econ'] = (df['Ast'] + df['Stl'] - df['TO']).values
+    adv_df['PPS'] = ((df['Pts'] - df['FTM']) / df['FGA']).values
+    adv_df['GameSc'] = (40 * df['eFG%'] + 2 * df['R%'] + 15 * df['FT/A'] + 25 - 2.5 * df['TO%']).values
+    adv_df['SoS'] = mdf['T_SoS'].values
+    phys_df = df[['Pos', 'Height', 'Weight', 'GP', 'GS', 'Mins', 'MinPerc', 'MinsPerGame']].copy()
+    phys_df['T_Poss'] = mdf['T_Poss'].values
+    score_df = df[[col for col in df if 'Score' in col]].copy()
     base_df = df[[col for col in df if col not in adv_df.columns and col not in phys_df.columns and col not in score_df.columns]].drop(columns=['WSPer40'])
     
     #The 75th percentile of players spend 26 minutes on court, so let's adjust to that
-    adj_mins = phys_df['Mins'].values
-    adj_mins[adj_mins < 5] = 5 #cutoff to avoid exploding numbers
-    adj_poss = mdf['T_Poss'] / 40 * phys_df['MinsPerGame']
-    adj_poss.loc[phys_df['MinsPerGame'] < 5] = 1
-    for col in base_df:
-        if 'FG' not in col and 'FT' not in col:
-            adv_df[col + 'Per26Min'] = base_df[col] * 26 / adj_mins
-            adv_df[col + 'Per100Poss'] = base_df[col] / (phys_df['GP'] * adj_poss) * 100
+    if len(add_stats) > 0:
+        adj_mins = phys_df['Mins'].values
+        adj_mins[adj_mins < 5] = 5 #cutoff to avoid exploding numbers
+        adj_poss = mdf['T_Poss'] / 40 * phys_df['MinsPerGame']
+        adj_poss.loc[phys_df['MinsPerGame'] < 5] = 1
+        for col in base_df:
+            if 'FG' not in col and 'FT' not in col:
+                if 'mins' in add_stats:
+                    adv_df[col + 'Per26Min'] = base_df[col] * 26 / adj_mins
+                if 'poss' in add_stats:
+                    adv_df[col + 'Per100Poss'] = base_df[col] / (phys_df['GP'] * adj_poss) * 100
             
     return adv_df, phys_df, score_df, base_df
 
@@ -388,11 +451,28 @@ def getRateStats(df, sdf, pdf):
 def getPlayerSeasonStats(df):
     return df.groupby(['PlayerID']).mean()
 
+'''
+getTeamRosters
+Gets stats for every player in every game.
+Inputs:
+    files - (dict) Feeder files from statslib.
+Returns:
+    df - (DataFrame) Frame of player names, teams and IDs. Index is PlayerID.
+'''
 def getTeamRosters(files):
     df = pd.read_csv(files['MPlayers'], error_bad_lines=False)
     df['FullName'] = df['FirstName'] + ' ' + df['LastName']
     df = df.set_index(['PlayerID'])
     return df
+
+'''
+loadPlayerNames
+Gets handy dict for finding player names from IDs and vice versa.
+Inputs:
+    files - (dict) Feeder files from statslib.
+Returns:
+    ret - (dict) Dict where keys include player IDs and names.
+'''
 
 def loadPlayerNames(files):
     df = pd.read_csv(files['MPlayers'])

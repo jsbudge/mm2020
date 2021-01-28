@@ -216,6 +216,7 @@ def getTourneyStats(tdf, df, files):
         wdf.loc[idx, 'T_Seed'] = sd
         wdf.loc[idx, 'T_FinalElo'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values[-1]
         wdf.loc[idx, 'T_FinalRank'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values[-1]
+        wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score'])
     return wdf
 
 '''
@@ -344,7 +345,7 @@ def getSeasonalStats(df, strat='rank', seasonal_only=False):
                 wdf.loc[idx] = data.loc[idx]
     wdf['T_Win%'] = dfapp.apply(lambda x: sum(x['T_Score'] > x['O_Score']) / x.shape[0])
     wdf['T_PythWin%'] = dfapp.apply(lambda grp: sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91))
-    wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(grp['O_Rank'], weights=grp['O_Elo']))
+    wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(400-grp['O_Rank'], weights=grp['O_Elo']) / 400)
     if seasonal_only:
         wdf = wdf[['T_Win%', 'T_PythWin%', 'T_SoS']]
     return wdf

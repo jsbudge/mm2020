@@ -337,6 +337,39 @@ def getAdvStats(df):
     wdf['FT%'] = df['FTM'] / df['FTA']
     return wdf.dropna()
 
+def splitStats(df, sdf):
+    df['MinPerc'] = np.digitize(df['Mins'], 
+                                    np.concatenate(([0], np.percentile(df['Mins'], [25, 50, 75]),
+                                                    [df['Mins'].max() + 1])))
+    df.loc[df['GP'] == 0, 'GP'] = 1
+    df.loc[df['FGA'] == 0, 'FGA'] = 1
+    df['MinsPerGame'] = df['Mins'] / df['GP']
+    mdf = df.merge(sdf[['T_SoS', 'T_Poss']], on=['Season', 'TID'], right_index=True)
+    adv_df = df[['Ast%', 'Blk%', 'BPM', 'DBPM', 'DR%', 'DWS', 'eFG%', 'FG%', 
+                 'FT/A', 'FT%', 'OBPM', 'OR%', 'OWS', 'PER', 'PtsProd',
+                 'Stl%', '3/2Rate', 'FG3%', 'R%', 'TS%', 'TO%', 'FG2%', 'Usage%',
+                 'WS']]
+    adv_df['Econ'] = df['Ast'] + df['Stl'] - df['TO']
+    adv_df['PPS'] = (df['Pts'] - df['FTM']) / df['FGA']
+    adv_df['GameSc'] = 40 * df['eFG%'] + 2 * df['R%'] + 15 * df['FT/A'] + 25 - 2.5 * df['TO%']
+    adv_df['SoS'] = mdf['T_SoS']
+    phys_df = df[['Pos', 'Height', 'Weight', 'GP', 'GS', 'Mins', 'MinPerc', 'MinsPerGame']]
+    phys_df['T_Poss'] = mdf['T_Poss']
+    score_df = df[[col for col in df if 'Score' in col]]
+    base_df = df[[col for col in df if col not in adv_df.columns and col not in phys_df.columns and col not in score_df.columns]].drop(columns=['WSPer40'])
+    
+    #The 75th percentile of players spend 26 minutes on court, so let's adjust to that
+    adj_mins = phys_df['Mins'].values
+    adj_mins[adj_mins < 5] = 5 #cutoff to avoid exploding numbers
+    adj_poss = mdf['T_Poss'] / 40 * phys_df['MinsPerGame']
+    adj_poss.loc[phys_df['MinsPerGame'] < 5] = 1
+    for col in base_df:
+        if 'FG' not in col and 'FT' not in col:
+            adv_df[col + 'Per26Min'] = base_df[col] * 26 / adj_mins
+            adv_df[col + 'Per100Poss'] = base_df[col] / (phys_df['GP'] * adj_poss) * 100
+            
+    return adv_df, phys_df, score_df, base_df
+
 def getRateStats(df, sdf, pdf):
     mdf = df.merge(pdf['TeamID'], on='PlayerID', right_index=True).sort_index()
     mdf = mdf.merge(sdf, left_on=['GameID', 'TeamID'], right_on=['GameID', 'TID'], right_index=True)

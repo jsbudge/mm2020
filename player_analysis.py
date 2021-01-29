@@ -81,8 +81,6 @@ season = 2016
 # av_df.to_csv('./data/AVRosterData.csv')
 # m_df.to_csv('./data/MeanRosterData.csv')
 print('Loading player data...')
-games = pd.read_csv('./data/{}/Games{}.csv'.format(season, season)).set_index(['GameID'])
-roster_df = pd.read_csv('./data/{}/Rosters{}.csv'.format(season, season)).set_index(['GameID', 'PlayerID'])
 sdf = fl.arrangeFrame(files, scaling=None, noinfluence=True)[0]
 savdf = st.getSeasonalStats(sdf, strat='relelo')
 tdf = fl.arrangeTourneyGames(files)[0]
@@ -90,10 +88,10 @@ adv_tdf = st.getTourneyStats(tdf, sdf, files)
 pdf = ev.getTeamRosters(files)
 #%%
 
-n_clusters = 20
-n_kpca_comps = 6
-n_player_types = 5
-minbins = np.array([0, 181, 456, 1160, 1649])
+n_clusters = 10
+n_kpca_comps = 4
+n_player_types = 12
+minbins = np.array([0, 28, 510, 1649])
 av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
 av_df = av_df.loc[np.logical_not(av_df.index.duplicated())]
 av_df = av_df.loc(axis=0)[:2019, :, :]
@@ -218,7 +216,7 @@ for idx, grp in exdf.groupby(['MinPerc', 'Cat']):
     vals = grp.drop(columns = [col for col in grp.columns if 'Score' in col] + \
                     ['Season', 'PlayerID', 'TID', 'Cat', 'MinPerc'])
     vals = (vals - vals.mean()) / vals.std()
-    dists = np.linalg.norm(vals, axis=1)
+    dists = np.linalg.norm(vals.fillna(0), axis=1)
     player = grp.loc[dists == dists.min()]
     if player['PlayerID'].values[0] > 0:
         pid = pdf.loc[player['PlayerID'], 'FullName'].values[0]

@@ -337,6 +337,79 @@ def getGameLineups(files, season):
         tmp['LineID'] = np.arange(tmp.shape[0])
         tmp['TID'] = key
         liddf = liddf.append(tmp.set_index(['TID', 'LineID']))
+        
+def getLineupsWithoutStats(files, season):
+    evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
+    evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
+    evp = evp.reset_index().set_index(['GameID', 'EventID'])
+    evp = evp.drop(columns=['X', 'Y', 'Area'])
+    lineup_ids = {}
+    game_df = pd.DataFrame()
+    for (gid, wid, lid), ev in tqdm(evp.groupby(['GameID', 'WTeamID', 'LTeamID'])):
+        ev = ev.loc[ev['EventPlayerID'] != 0]
+        mxepsec = ev['ElapsedSeconds'].max()
+        ov = [0, 1200, 2400]
+        while ov[-1] < mxepsec:
+            ov = ov + [ov[-1] + 300]
+        lns = (pd.DataFrame(index=np.arange(ov[-1]), columns=np.sort(list(set(ev.loc[ev['EventTeamID'] == wid,
+                                                                             'EventPlayerID'].values))),
+                             data=False),
+               pd.DataFrame(index=np.arange(ov[-1]), columns=np.sort(list(set(ev.loc[ev['EventTeamID'] == lid,
+                                                                             'EventPlayerID'].values))),
+                             data=False))
+        for pid, p in ev.groupby(['EventPlayerID']):
+            if pid != 0:
+                poss_subs = np.sort(ov + \
+                    list(p.loc[p['EventSubType'] == 'in', 'ElapsedSeconds'] - .5) + \
+                        list(p.loc[p['EventSubType'] == 'out', 'ElapsedSeconds'] + .5))
+                nev, secs = np.histogram(p['ElapsedSeconds'], poss_subs)
+                secs = secs.astype(int)
+                for n in range(len(nev)):
+                    if nev[n] > 0:
+                        if pid in lns[0].columns:
+                            lns[0].loc[np.logical_and(lns[0].index > secs[n],
+                                                      lns[0].index < secs[n+1]), pid] = True
+                        else:
+                            lns[1].loc[np.logical_and(lns[1].index > secs[n],
+                                                      lns[1].index < secs[n+1]), pid] = True
+        line_df = pd.DataFrame(index=lns[0].index)
+        for tt in range(2):
+            if wid in lineup_ids and tt == 0:
+                lineups = lineup_ids[wid]
+            elif lid in lineup_ids and tt == 1:
+                lineups = lineup_ids[lid]
+            else:
+                lineups = []
+            for idx, row in lns[tt].iterrows():
+                lu = [col for col in lns[tt].columns if row[col]]
+                if len(lu) == 5:
+                    if lu not in lineups:
+                        lineups.append(lu)
+                        lu_id = len(lineups) - 1
+                    else:
+                        lu_id = [i for i, d in enumerate(lineups) if lu == d][0]
+                else:
+                    lu_id = -1
+                if tt == 0:
+                    line_df.loc[idx, 'T_LineID'] = lu_id
+                else:
+                    line_df.loc[idx, 'O_LineID'] = lu_id
+            if tt == 0:
+                lineup_ids[wid] = lineups
+            else:
+                lineup_ids[lid] = lineups
+        line_df['Mins'] = 1 / 60
+        line_df['GameID'] = gid
+        l1_df = line_df[['T_LineID', 'GameID', 'Mins']]
+        l1_df['TID'] = wid
+        l1_df = l1_df.loc[l1_df['T_LineID'] != -1]
+        l2_df = line_df[['O_LineID', 'GameID', 'Mins']]
+        l2_df = l2_df.rename(columns={'O_LineID': 'T_LineID'})
+        l2_df['TID'] = lid
+        l2_df = l2_df.loc[l2_df['T_LineID'] != -1]
+        game_df = game_df.append(l1_df.groupby(['GameID', 'TID', 'T_LineID']).sum())
+        game_df = game_df.append(l2_df.groupby(['GameID', 'TID', 'T_LineID']).sum())
+    return lineup_ids, game_df
 
 '''
 getAdvStats

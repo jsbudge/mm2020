@@ -15,8 +15,6 @@ import matplotlib.pyplot as plt
 import statslib as st
 from tqdm import tqdm
 from itertools import combinations
-import framelib as fl
-import featurelib as feat
 import seaborn as sns
 import eventlib as ev
 from sklearn.preprocessing import StandardScaler, PowerTransformer, PolynomialFeatures, OneHotEncoder
@@ -28,7 +26,6 @@ from collections import Counter
 from sportsreference.ncaab.roster import Player
 plt.close('all')
 
-files = st.getFiles()
 def findPlayerTeam(games, rosters, pid):
     r = rosters.loc(axis=0)[:, pid]
     return Counter(list(games.loc[r.index.get_level_values(0)].values.flatten())).most_common(1)[0][0]
@@ -44,53 +41,55 @@ def getTeamRosterData(team, rosters, games, df, season):
     return df.loc(axis=0)[season, getPlayerData(team, rosters, games, df, season)]
         
 season = 2016
-# av_df = pd.DataFrame()
-# m_df = pd.DataFrame()
-# pdf = ev.getTeamRosters(files)
-# for seas in [2015, 2016, 2017, 2018, 2019, 2020]:
-#     sdf = fl.arrangeFrame(files, season, scaling=None, noinfluence=True)[0]
-#     games = pd.read_csv('./data/{}/Games{}.csv'.format(seas, seas)).set_index(['GameID'])
-#     roster_df = pd.read_csv('./data/{}/Rosters{}.csv'.format(seas, seas)).set_index(['GameID', 'PlayerID'])
-#     sdf1 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['TID', 'OID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
-#     sdf2 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['OID', 'TID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
-#     sdf = sdf1.rename(columns={'WTeamID': 'TID'}).set_index(['GameID', 'TID']).append( \
-#         sdf2.rename(columns={'LTeamID': 'TID'}).set_index(['GameID', 'TID'])).drop( \
-#         columns=['DayNum', 'WTeamID', 'LTeamID']).sort_index()
-                                                                                   
-#     scale_df = ev.getRateStats(roster_df, sdf, pdf)
-#     roster_df = roster_df.merge(scale_df, on=['GameID', 'PlayerID'])
-#     #games, roster_df = ev.getRosters(files, seas)
-#     games.to_csv('./data/{}/Games{}.csv'.format(seas, seas))
-#     roster_df.to_csv('./data/{}/Rosters{}.csv'.format(seas, seas))
-#     sum_df = roster_df.groupby(['PlayerID']).sum()
-#     tmp_df = ev.getAdvStats(sum_df)
-#     tmp_df['Season'] = seas
-#     tmp_df['Mins'] = sum_df['Mins']
-#     tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
-#     av_df = av_df.append(tmp_df)
-#     tmp_df = roster_df.groupby(['PlayerID']).mean()
-#     tmp_df['Season'] = seas
-#     tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
-#     m_df = m_df.append(tmp_df)
-# av_df = av_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
-# av_df = av_df.rename(columns={'TeamID': 'TID'})
-# av_df = av_df.reset_index().set_index(['Season', 'PlayerID', 'TID'])
-# m_df = m_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
-# m_df = m_df.rename(columns={'TeamID': 'TID'})
-# m_df = m_df.reset_index().set_index(['Season', 'PlayerID', 'TID'])
-# av_df.to_csv('./data/AVRosterData.csv')
-# m_df.to_csv('./data/MeanRosterData.csv')
+save_to_csv = False
+
+if save_to_csv:
+    av_df = pd.DataFrame()
+    m_df = pd.DataFrame()
+    pdf = ev.getTeamRosters()
+    for seas in [2015, 2016, 2017, 2018, 2019, 2020]:
+        games, roster_df = ev.getRosters(seas)
+        games.to_csv('./data/{}/Games{}.csv'.format(seas, seas))
+        roster_df.to_csv('./data/{}/Rosters{}.csv'.format(seas, seas))
+        sdf = st.arrangeFrame(season, scaling=None, noinfluence=True)[0]
+        games = pd.read_csv('./data/{}/Games{}.csv'.format(seas, seas)).set_index(['GameID'])
+        roster_df = pd.read_csv('./data/{}/Rosters{}.csv'.format(seas, seas)).set_index(['GameID', 'PlayerID'])
+        sdf1 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['TID', 'OID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
+        sdf2 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['OID', 'TID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
+        sdf = sdf1.rename(columns={'WTeamID': 'TID'}).set_index(['GameID', 'TID']).append( \
+            sdf2.rename(columns={'LTeamID': 'TID'}).set_index(['GameID', 'TID'])).drop( \
+            columns=['DayNum', 'WTeamID', 'LTeamID']).sort_index()                                
+        scale_df = ev.getRateStats(roster_df, sdf, pdf)
+        roster_df = roster_df.merge(scale_df, on=['GameID', 'PlayerID'])
+        sum_df = roster_df.groupby(['PlayerID']).sum()
+        tmp_df = ev.getAdvStats(sum_df)
+        tmp_df['Season'] = seas
+        tmp_df['Mins'] = sum_df['Mins']
+        tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
+        av_df = av_df.append(tmp_df)
+        tmp_df = roster_df.groupby(['PlayerID']).mean()
+        tmp_df['Season'] = seas
+        tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
+        m_df = m_df.append(tmp_df)
+    av_df = av_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
+    av_df = av_df.rename(columns={'TeamID': 'TID'})
+    av_df = av_df.reset_index().set_index(['Season', 'PlayerID', 'TID'])
+    m_df = m_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
+    m_df = m_df.rename(columns={'TeamID': 'TID'})
+    m_df = m_df.reset_index().set_index(['Season', 'PlayerID', 'TID'])
+    av_df.to_csv('./data/AVRosterData.csv')
+    m_df.to_csv('./data/MeanRosterData.csv')
 print('Loading player data...')
-sdf = fl.arrangeFrame(files, scaling=None, noinfluence=True)[0]
+sdf = st.arrangeFrame(scaling=None, noinfluence=True)[0]
 savdf = st.getSeasonalStats(sdf, strat='relelo')
-tdf = fl.arrangeTourneyGames(files)[0]
-adv_tdf = st.getTourneyStats(tdf, sdf, files) 
-pdf = ev.getTeamRosters(files)
+tdf = st.arrangeTourneyGames()[0]
+adv_tdf = st.getTourneyStats(tdf, sdf) 
+pdf = ev.getTeamRosters()
 #%%
 
 n_clusters = 10
 n_kpca_comps = 4
-n_player_types = 12
+n_player_types = 5
 minbins = np.array([0, 28, 510, 1649])
 av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
 av_df = av_df.loc[np.logical_not(av_df.index.duplicated())]
@@ -181,11 +180,13 @@ for idx, grp in adv_df.groupby(['Season', 'TID']):
         if 'Score' in col:
             ts_df.loc[idx, [col, col + 'W']] = [grp[col].mean(), np.average(grp[col], 
                                                                             weights=phys_df.loc[grp.index, 'MinsPerGame'].values)]
+if save_to_csv:
+    ts_df.to_csv('./data/PlayerAnalysisData.csv')
     
 #%%
 
 #Lineup experimentation
-g_ev, line, sec_df, l_df = ev.getSingleGameLineups(2545, files, season)
+g_ev, line, sec_df, l_df = ev.getSingleGameLineups(2545, season)
 
 lin1 = pd.DataFrame(columns=adv_df.columns)
 lin2 = pd.DataFrame(columns=adv_df.columns)

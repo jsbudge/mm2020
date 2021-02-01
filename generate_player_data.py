@@ -4,6 +4,10 @@
 Created on Mon Jan 25 16:31:12 2021
 
 @author: jeff
+
+Generates player data from sportsreference.com and matches it to
+the event data in MEvents{}.csv. Saves the results out to another csv,
+because this takes for-ev-er to run.
 """
 from sportsreference.ncaab.roster import Player
 from sportsreference.ncaab.teams import Teams, Team

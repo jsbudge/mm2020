@@ -13,9 +13,6 @@ Mostly, rosters and coach data.
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from sklearn.preprocessing import OrdinalEncoder
-from dataclasses import dataclass
-from itertools import groupby
 
 def all_equal(i, q):
     return np.all([ii in q for ii in i])
@@ -26,7 +23,6 @@ poss_breaks = np.array([0, 1200, 2400, 2700, 3000, 3300, 3600, 3900, 4200])
 getRosters
 Gets stats for every player in every game.
 Inputs:
-    files - (dict) Feeder files from statslib.
     season - (int) End Year of season (i.e., for 2017-18 season, this would be 2018)
 Returns:
     teams - (DataFrame) Frame of game ids with team ids and daynums for
@@ -34,8 +30,8 @@ Returns:
     evst - (DataFrame) Frame of all the stats for each player, arranged by season
                         and team.
 '''
-def getRosters(files, season):
-    evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
+def getRosters(season):
+    evp = pd.read_csv('./data/MEvents{}.csv'.format(season)).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
     evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
     evp = evp.reset_index().set_index(['GameID', 'DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
     evp = evp.loc[evp.index.get_level_values(4) != 0]
@@ -88,15 +84,11 @@ def getRosters(files, season):
     evst['Pts'] = evst['FGM3'].values * 3 + evst['FGM2'].values * 2 + evst['FTM'].values
     return teams, evst.drop(columns=['WTeamID', 'LTeamID']).fillna(0)
 
-def getEvents(files, season):
-    return pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID']).fillna(0)
-
 '''
 getSingleGameLineups
 Gets stats for lineups in a single game.
 Inputs:
     gid - (int) GameID of single game to look at.
-    files - (dict) Feeder files from statslib.
     season - (int) End Year of season (i.e., for 2017-18 season, this would be 2018)
 Returns:
     ev - (DataFrame) Frame of all events recorded during the game.
@@ -108,14 +100,12 @@ Returns:
                         tuple entry is the frame for one team's lineups, the last
                         being the intersection of both lineups.
 '''
-def getSingleGameLineups(gid, files, season):
-    evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
+def getSingleGameLineups(gid, season):
+    evp = pd.read_csv('./data/MEvents{}.csv'.format(season)).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
     evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
     evp = evp.reset_index().set_index(['GameID', 'EventID'])
-    ordenc = OrdinalEncoder()
     ev = evp.loc(axis=0)[gid, :].copy()
     wid = ev['WTeamID'].values[0]; lid = ev['LTeamID'].values[0]
-    ev['EventTypeID'] = ordenc.fit_transform(np.array([row['EventType'] + str(row['EventSubType']) for idx, row in ev.iterrows()]).reshape((-1, 1))).astype(int)
     ev = ev.drop(columns=['DayNum', 'X', 'Y', 'Area',
                           'WTeamID', 'LTeamID'])
     ev = ev.loc[ev['EventPlayerID'] != 0]
@@ -225,8 +215,8 @@ def getSingleGameLineups(gid, files, season):
     
     return ev, lineups, line_df, lsum_dfs
 
-def getGameLineups(files, season):
-    evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
+def getGameLineups(season):
+    evp = pd.read_csv('./data/MEvents{}.csv'.format(season)).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
     evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
     evp = evp.reset_index().set_index(['GameID', 'EventID'])
     evp = evp.loc[evp['WTeamID'] == 1140]
@@ -338,8 +328,8 @@ def getGameLineups(files, season):
         tmp['TID'] = key
         liddf = liddf.append(tmp.set_index(['TID', 'LineID']))
         
-def getLineupsWithoutStats(files, season):
-    evp = pd.read_csv(files['MEvents{}'.format(season)]).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
+def getLineupsWithoutStats(season):
+    evp = pd.read_csv('./data/MEvents{}.csv'.format(season)).drop(columns=['Season']).set_index(['DayNum', 'WTeamID', 'LTeamID', 'EventPlayerID'])
     evp['GameID'] = evp.groupby(['DayNum', 'WTeamID', 'LTeamID']).ngroup()
     evp = evp.reset_index().set_index(['GameID', 'EventID'])
     evp = evp.drop(columns=['X', 'Y', 'Area'])
@@ -527,13 +517,11 @@ def getPlayerSeasonStats(df):
 '''
 getTeamRosters
 Gets stats for every player in every game.
-Inputs:
-    files - (dict) Feeder files from statslib.
 Returns:
     df - (DataFrame) Frame of player names, teams and IDs. Index is PlayerID.
 '''
-def getTeamRosters(files):
-    df = pd.read_csv(files['MPlayers'], error_bad_lines=False)
+def getTeamRosters():
+    df = pd.read_csv('./data/MPlayers.csv', error_bad_lines=False)
     df['FullName'] = df['FirstName'] + ' ' + df['LastName']
     df = df.set_index(['PlayerID'])
     return df
@@ -541,14 +529,12 @@ def getTeamRosters(files):
 '''
 loadPlayerNames
 Gets handy dict for finding player names from IDs and vice versa.
-Inputs:
-    files - (dict) Feeder files from statslib.
 Returns:
     ret - (dict) Dict where keys include player IDs and names.
 '''
 
-def loadPlayerNames(files):
-    df = pd.read_csv(files['MPlayers'])
+def loadPlayerNames():
+    df = pd.read_csv('./data/MPlayers.csv')
     df['FullName'] = df['FirstName'] + ' ' + df['LastName']
     ret = {}
     for idx, row in df.iterrows():

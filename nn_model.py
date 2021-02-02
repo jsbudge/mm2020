@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 import statslib as st
 from tqdm import tqdm
 from itertools import combinations
-import featurelib as feat
 import seaborn as sns
 import eventlib as ev
 from sklearn.preprocessing import StandardScaler, PowerTransformer, PolynomialFeatures, OneHotEncoder
@@ -114,17 +113,15 @@ def get_frames(idx, df, targets):
     outcomes = OneHotEncoder(sparse=False).fit_transform(pd.DataFrame(data=targets.values, index=idx).sort_index().values + 0)
     return g1, g2, outcomes
 
-files = st.getFiles()
-
 #%%
 
 nspl = 5
 tune_hyperparams = False
 scale = StandardScaler()
 cv = KFold(n_splits=nspl, shuffle=True)
-scale_df = fl.arrangeFrame(files, scaling=StandardScaler(), noinfluence=False)
-unscale_df = fl.arrangeFrame(files, scaling=None, noinfluence=False)
-games = fl.arrangeTourneyGames(files, noraw=True)
+scale_df = arrangeFrame(scaling=StandardScaler(), noinfluence=False)
+unscale_df = arrangeFrame(scaling=None, noinfluence=False)
+games = arrangeTourneyGames(noraw=True)
 sdf = scale_df[0]
 t_df = st.getTourneyStats(games[0], unscale_df[0], files)
 score_diff = unscale_df[0]['T_Score'] - unscale_df[0]['O_Score']

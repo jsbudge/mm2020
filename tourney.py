@@ -10,7 +10,7 @@ Stores all of our classes and objects for data manipulation.
 import numpy as np
 import pandas as pd
 import statslib as st
-from framelib import getAllMatches
+from statslib import getAllMatches
 from sklearn.metrics import log_loss
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold
@@ -18,12 +18,12 @@ from itertools import combinations
 from sklearn.pipeline import Pipeline, FeatureUnion
 
 class Bracket(object):
-    def __init__(self, season, files, team_features):
-        seeds = pd.read_csv(files['MNCAATourneySeeds'])
+    def __init__(self, season, team_features):
+        seeds = pd.read_csv('./data/MNCAATourneySeeds.csv')
         seeds = seeds.loc[seeds['Season'] == season]
-        slots = pd.read_csv(files['MNCAATourneySlots'])
+        slots = pd.read_csv('./data/MNCAATourneySlots.csv')
         slots = slots.loc[slots['Season'] == season]
-        seedslots = pd.read_csv(files['MNCAATourneySeedRoundSlots']).rename(columns={'GameSlot': 'Slot'})
+        seedslots = pd.read_csv('./data/MNCAATourneySeedRoundSlots.csv').rename(columns={'GameSlot': 'Slot'})
         structure = slots.merge(seedslots[['Slot', 'GameRound']], on='Slot')
         structure = structure.loc[np.logical_not(structure.duplicated(['Season', 'Slot'], keep='first'))].sort_values('GameRound')
         playin_seeds = []
@@ -43,7 +43,7 @@ class Bracket(object):
                     seeds.loc[seeds['Seed'] == row['StrongSeed'], 'TeamID'].values[0]
         structure['Winner'] = 0; structure['StrongSeed%'] = 0; structure['WeakSeed%'] = 0
         truth = structure.copy()
-        actual_games = pd.read_csv(files['MNCAATourneyCompactResults'])
+        actual_games = pd.read_csv('./data/MNCAATourneyCompactResults.csv')
         actual_games = actual_games.loc[actual_games['Season'] == season]
         for idx in range(structure.shape[0]):
             row = truth.iloc[idx]
@@ -61,10 +61,9 @@ class Bracket(object):
         self.seeds = seeds
         self.structure = structure
         self.truth = truth
-        self.tnames = st.loadTeamNames(files)
+        self.tnames = st.loadTeamNames()
         self.isBuilt = False
         self.feats = team_features
-        self.files = files
         
     def __str__(self):
         order = ['W', 'X', 'Y', 'Z']
@@ -105,37 +104,38 @@ class Bracket(object):
                 match = [0, 0, 0, 0]
         return ret
         
+        
     """
     run
     Runs through the tournament using data provided and the trained classifier
     provided.
     
     Params:
-        classifier: sklearn model with predict() and predict_proba() function call.
-        fc: FeatureCreator - prepped FeatureCreator.
+        classifier: keras model with two softmax outputs.
     """
     def run(self, classifier, transform=None):
-        ag = getAllMatches(self.files, self.feats, self.season, transform=transform)
+        bones = self.structure
+        ag = getAllMatches(self.feats, self.season, transform=transform)
         gm = pd.DataFrame(index=ag.index, data=classifier.predict(ag))
-        for idx in range(self.structure.shape[0]):
-            row = self.structure.iloc[idx]
+        for idx in range(bones.shape[0]):
+            row = bones.iloc[idx]
             gm_res = gm.loc(axis=0)[:, self.season, row['StrongSeed'], row['WeakSeed']].values[0]
             winner = row['StrongSeed'] if gm_res[0] > .5 else row['WeakSeed']
-            self.structure.loc[self.structure['Slot'] == row['Slot'], 
+            bones.loc[bones['Slot'] == row['Slot'], 
                                ['Winner', 'StrongSeed%', 'WeakSeed%']] = \
                                    [winner, gm_res[0], gm_res[1]]
-            if row['Slot'] in self.structure['StrongSeed'].values:
-                self.structure.loc[self.structure['StrongSeed'] == row['Slot'], 'StrongSeed'] = winner
+            if row['Slot'] in bones['StrongSeed'].values:
+                bones.loc[bones['StrongSeed'] == row['Slot'], 'StrongSeed'] = winner
             else:
-                self.structure.loc[self.structure['WeakSeed'] == row['Slot'], 'WeakSeed'] = winner
+                bones.loc[bones['WeakSeed'] == row['Slot'], 'WeakSeed'] = winner
         self.isBuilt = True
         success = (self.truth.loc[self.truth['GameRound'] > 0, 'Winner'] - \
-                   self.structure.loc[self.structure['GameRound'] > 0, 'Winner']) == 0
+                   bones.loc[bones['GameRound'] > 0, 'Winner']) == 0
         score = sum(2**(self.truth.loc[self.truth['GameRound'] > 0, 'GameRound'].values-1) * 10 * success)
         self.espn_score = score
         self.flat_score = sum(success)
-        self.loss = log_loss(success, self.structure.loc[self.structure['GameRound'] > 0, 'StrongSeed%'].values)
-        self.accuracy = sum(success) / self.structure.loc[self.structure['GameRound'] > 0].shape[0]
+        self.loss = log_loss(success, bones.loc[bones['GameRound'] > 0, 'StrongSeed%'].values)
+        self.accuracy = sum(success) / bones.loc[bones['GameRound'] > 0].shape[0]
         
     """
     runAll

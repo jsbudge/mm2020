@@ -18,38 +18,39 @@ import eventlib as ev
 import numpy as np
 from difflib import get_close_matches
 
-files = st.getFiles()
-pdf = ev.getTeamRosters(files)
-# #Grab the data from sportsreference
-# seas_map = {'2014-15': 2015, '2015-16': 2016,
-#                                    '2016-17': 2017, '2017-18': 2018,
-#                                    '2018-19': 2019, '2019-20': 2020}
-# play_df = pd.DataFrame()
-# for season in [2015, 2016, 2017, 2018, 2019, 2020]:
-#     tm = Teams(season)
-#     for team in tqdm(tm):
-#         ros = team.roster
-#         for play in ros.players:
-#             if play_df.shape[0] > 0:
-#                 if play.player_id not in play_df['player_id']:
-#                     t = play.dataframe
-#                     t = t.reset_index().fillna(0)
-#                     t['level_0'] = t['level_0'].map(seas_map)
-#                     t['PlayerName'] = play.name
-#                     t['TNme'] = team.name
-#                     play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
-#                 else:
-#                     play_df.loc[np.logical_and(play_df['player_id'] == play.player_id,
-#                                                play_df['level_0'] == season), 'TNme'] = team.name
-#             else:
-#                 t = play.dataframe
-#                 t = t.reset_index().fillna(0)
-#                 t['level_0'] = t['level_0'].map(seas_map)
-#                 t['PlayerName'] = play.name
-#                 t['TNme'] = team.name
-#                 play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
+pdf = ev.getTeamRosters()
+#Grab the data from sportsreference
+seas_map = {'2011-12': 2012,
+            '2012-13': 2013, '2013-14': 2014,
+            '2014-15': 2015, '2015-16': 2016,
+                                    '2016-17': 2017, '2017-18': 2018,
+                                    '2018-19': 2019, '2019-20': 2020}
+play_df = pd.DataFrame()
+for season in [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020]:
+    tm = Teams(season)
+    for team in tqdm(tm):
+        ros = team.roster
+        for play in ros.players:
+            if play_df.shape[0] > 0:
+                if play.player_id not in play_df['player_id']:
+                    t = play.dataframe
+                    t = t.reset_index().fillna(0)
+                    t['level_0'] = t['level_0'].map(seas_map)
+                    t['PlayerName'] = play.name
+                    t['TNme'] = team.name
+                    play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
+                else:
+                    play_df.loc[np.logical_and(play_df['player_id'] == play.player_id,
+                                                play_df['level_0'] == season), 'TNme'] = team.name
+            else:
+                t = play.dataframe
+                t = t.reset_index().fillna(0)
+                t['level_0'] = t['level_0'].map(seas_map)
+                t['PlayerName'] = play.name
+                t['TNme'] = team.name
+                play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
 
-play_df = pd.read_csv('test_play_df.csv')
+#play_df = pd.read_csv('test_play_df.csv')
 #%%
 #Rearrange things to my liking
 sdf = play_df.copy()

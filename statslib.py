@@ -596,6 +596,26 @@ Returns:
 def joinFrame(df1, df2):
     return df1.merge(df2, on=['GameID', 'Season', 'DayNum', 'TID', 'OID'])
 
+'''
+arrangeFrame
+arranges games into frames for stats, winners, and dayNum.
+
+Params:
+    season: int - If we want a particular season. Leave as None to get everything.
+    scaling: sklearn.preprocessing scaler - A scaler to normalize the stats with.
+                Leave this as None to just get the stats as they are.
+    noraw: bool - Set this as True to only get advanced stats, and not things
+                like points and rebounds.
+    noinfluence: bool - Set this as True to drop influence stats.
+
+Returns:
+    ts: DataFrame - Frame with stats.
+    ty: DataFrame - Frame (technically a Series) of True/False based on if the
+                the TID team won the game.
+    tsdays: DataFrame - Frame (Series) of DayNum values.
+    All frames use GameID, Season, TID, OID as their indexes.
+'''
+
 def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False):
     ts = getGames(season=season).drop(columns=['NumOT', 'GLoc'])
     ty = ts['T_Score'] > ts['O_Score'] - 0
@@ -615,6 +635,21 @@ def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False):
         ts = normalizeToSeason(ts, scaler=scaling)
     return ts, ty, tsdays
 
+'''
+arrangeTourneyGames
+arranges tournament games into frames for stats, winners, and dayNum.
+
+Params:
+    noraw: bool - Set this as True to only get advanced stats, and not things
+                like points and rebounds.
+
+Returns:
+    tts: DataFrame - Frame with stats.
+    tty: DataFrame - Frame (technically a Series) of True/False based on if the
+                the TID team won the game.
+    ttsdays: DataFrame - Frame (Series) of DayNum values.
+    All frames use GameID, Season, TID, OID as their indexes.
+'''
 def arrangeTourneyGames(noraw=False):
     tts = getGames(tourney=True).drop(columns=['NumOT', 'GLoc'])
     tty = tts['T_Score'] > tts['O_Score'] - 0
@@ -625,33 +660,38 @@ def arrangeTourneyGames(noraw=False):
         tts = joinFrame(tts, getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])
     ttsdays = tts['DayNum']
     tts = tts.drop(columns=['DayNum'])
+    tty.index = tts.index
     return tts, tty, ttsdays
 
-def loadGames(sts, games):
-    ttl = pd.DataFrame(index=games.index).merge(sts, 
-                                            left_on=['Season', 'OID'], 
-                                            right_on=['Season', 'TID'], 
-                                            right_index=True)
-    y = (games['T_Score'] - games['O_Score']) > 0
-    X = ttl.groupby(['GameID']).diff().fillna(0) + ttl.groupby(['GameID']).diff(periods=-1).fillna(0)
-    return X.sort_index(), y.sort_index()
+'''
+getMatches
+Arranges team feature vectors into games for easy training.
 
-def splitGames(X, y, split=None, as_frame=False):
-    X = X.sort_index(); y = y.sort_index()
-    if split is None:
-        return X, y
+Params:
+    gids: DataFrame - Frame of games you want to use feature vectors for.
+                This only uses the index of this frame.
+    team_feats: DataFrame - Frame of feature vectors for each team. Should have
+                index of [Season, TID].
+    season: int - set this to get a particular season of the frame passed to
+                gids.
+
+Returns:
+    g1: DataFrame - Frame with team_feats columns for both teams, using gids'
+                index.
+'''
+        
+def getMatches(gids, team_feats, season=None):
+    if season is not None:
+        g = gids.loc(axis=0)[:, season, :, :]
     else:
-        try:
-            s = X.index.get_level_values(1) == split
-            train = np.logical_not(s); test = s
-        except:
-            tr, te = next(split.split(X, y))
-            train = [s in tr for s in range(X.shape[0])]
-            test = [s in te for s in range(X.shape[0])]
-        if as_frame:
-            return X.loc[train], y[train], X.loc[test], y[test]
-        else:
-            return X.loc[train].values, y[train].values, X.loc[test].values, y[test].values
+        g = gids.copy()
+    ids = ['GameID', 'Season', 'TID', 'OID']
+    gsc = g.reset_index()[ids]
+    g1 = gsc.merge(team_feats, on=['Season', 'TID']).set_index(ids)
+    g2 = gsc.merge(team_feats, left_on=['Season', 'OID'],
+                   right_on=['Season', 'TID']).set_index(ids)
+    return g1.merge(g2, on=ids)
+    
         
 def getAllMatches(sts, season, transform=None):
     sd = pd.read_csv('./data/MNCAATourneySeeds.csv')
@@ -684,13 +724,6 @@ def merge(*args):
         else:
             df = df.merge(d, left_index=True, right_index=True)
     return df
-
-def transformFrame(df, trans, fit=False):
-    if fit:
-        dt = trans.fit_transform(df)
-        return pd.DataFrame(index=df.index, data=dt), trans
-    else:
-        return pd.DataFrame(index=df.index, data=trans.transform(df))
             
 
 '''

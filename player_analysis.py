@@ -90,7 +90,7 @@ pdf = ev.getTeamRosters()
 n_clusters = 10
 n_kpca_comps = 4
 n_player_types = 5
-minbins = np.array([0, 28, 510, 1649])
+minbins = np.array([0, 5.55, 15.88, 30, 44])
 av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
 av_df = av_df.loc[np.logical_not(av_df.index.duplicated())]
 av_df = av_df.loc(axis=0)[:2019, :, :]
@@ -138,7 +138,7 @@ for min_class in list(set(phys_df['MinPerc'].values)):
     cat_perc = pca_df.copy()
     print('Applying clustering...')
     n_types = n_player_types
-    clalg = cl.Birch(n_clusters=n_player_types, threshold=0.3755102040816327, branching_factor=94)
+    clalg = cl.Birch(n_clusters=n_player_types, threshold=0.44, branching_factor=45)
     cat = clalg.fit_predict(pca_df)
     shape_sz = pca_df.shape[0]
     big_cat = Counter(cat)
@@ -236,7 +236,7 @@ best_players = best_players.set_index(['MinPerc', 'Cat'])
         
 #%%
 
-plt_df = adv_df.loc[phys_df['MinPerc'] == 3, ['Cat', 'DWS', 'OWS',
+plt_df = adv_df.loc[phys_df['MinPerc'] == 4, ['Cat', 'DWS', 'OWS',
                                'DefScore', 'OffScore', 'BalanceScore']]
 plt_df = plt_df.loc(axis=0)[season, :, :]
 plt_df = plt_df.loc[plt_df['Cat'] != -1]

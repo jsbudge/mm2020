@@ -54,7 +54,8 @@ total_mu = total_df.groupby(['Season']).mean()
 total_std = total_df.groupby(['Season']).std()
 total_df = st.normalizeToSeason(total_df)
 
-lin_df = sdf[['T_Score', 'T_OR', 'T_DR', 'T_Ast', 'T_Stl', 'T_Blk']]
+lin_df = sdf[['T_FGA', 'T_FGM', 'T_FGM3', 'T_FGA3', 'T_FTM', 'T_FTA', 
+              'T_OR', 'T_DR', 'T_Ast', 'T_Stl', 'T_Blk']]
 lin_mu = lin_df.groupby(['Season']).mean()
 lin_std = lin_df.groupby(['Season']).std()
 for idx, grp in lin_df.groupby(['Season']):
@@ -81,7 +82,7 @@ for season, grp in lin_df.groupby(['Season']):
         targets = lin_df.loc[grp.index]
         adf = st.getMatches(grp, total_df)
         Xt, Xs, yt, ys = train_test_split(adf, targets)
-        model.fit(Xt, yt, epochs=50, validation_data=(Xs, ys))
+        model.fit(Xt, yt, epochs=5, validation_data=(Xs, ys))
 
 res_df = pd.DataFrame(index=tdf.index, columns=lin_df.columns)
 for season, grp in res_df.groupby(['Season']):
@@ -95,7 +96,11 @@ tdf = tdf.loc[res_df.index, res_df.columns].sort_index()
 
 comp_df = -res_df.groupby(['GameID']).diff().dropna()
 comp_df['Winner'] = tdf_t
-comp_df['isCorrect'] = (test['T_Score'] > 0) ^ test['Winner'] == 0
+comp_df['isCorrect'] = (comp_df['T_Score'] > 0) ^ comp_df['Winner'] == 0
+
+#%%
+
+
 
     
     

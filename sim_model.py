@@ -30,6 +30,7 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras import layers, regularizers
 from keras.callbacks import TensorBoard
 from tensorflow.keras import backend as K
+from datetime import datetime
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 savdf = st.getSeasonalStats(sdf, strat='relelo')
@@ -47,8 +48,7 @@ inf_df = inf_df.drop(columns=['DayNum', 'T_Rank', 'T_Elo'])
 inf_df.columns = [col + 'Inf' for col in inf_df.columns]
 
 #%%
-mdf = savdf.drop(columns=[col for col in savdf.columns if 'O_' in col])
-total_df = st.merge(mdf, inf_df)
+total_df = st.merge(savdf, inf_df)
 
 total_mu = total_df.groupby(['Season']).mean()
 total_std = total_df.groupby(['Season']).std()
@@ -63,40 +63,48 @@ for idx, grp in lin_df.groupby(['Season']):
 
 #%%
 inp = keras.Input(shape=(total_df.shape[1] * 2,))
-out = layers.Dense(1600,
-                           name='dense1')(inp)
-out = layers.Dense(1600)(out)
-out = layers.Dense(1600)(out)
-out = layers.Dense(600)(out)
-out = layers.Dense(600)(out)
+out = layers.Dense(1600, kernel_regularizer=regularizers.l1(.1))(inp)
+out = layers.Dense(1600, kernel_regularizer=regularizers.l1(.1))(out)
+out = layers.Dense(1600, kernel_regularizer=regularizers.l1(.1))(out)
+out = layers.Dense(1500, kernel_regularizer=regularizers.l1(.1))(out)
+out = layers.Dense(1500, kernel_regularizer=regularizers.l1(.1))(out)
 reg = layers.Dense(lin_df.shape[1],
                         name='output')(out)
 model = keras.Model(inputs=inp, outputs=reg)
-model.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+model.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-2),
               loss=['mean_squared_error'])
 
 #%%
+K.clear_session()
 
-for season, grp in lin_df.groupby(['Season']):
-    if season in total_df.index.get_level_values(0):
-        targets = lin_df.loc[grp.index]
-        adf = st.getMatches(grp, total_df)
-        Xt, Xs, yt, ys = train_test_split(adf, targets)
-        model.fit(Xt, yt, epochs=5, validation_data=(Xs, ys))
+#MODEL STAGE TWO
+logdir = "./logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+k_calls = [tf.keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    min_delta=1e-4,
+                    patience=15,
+                    verbose=0,
+                    mode="auto",
+                    baseline=None,
+                    restore_best_weights=True),
+            TensorBoard(histogram_freq=3, write_images=False,
+                        log_dir=logdir)]
+tdf_seas = list(set(total_df.index.get_level_values(0)))
+good_seasons = [True if idx[1] in tdf_seas else False for idx, row in lin_df.iterrows()]
+targets = lin_df.loc[good_seasons].sort_index()
+adf = st.getMatches(lin_df.loc[good_seasons], total_df).sort_index()
+Xt, Xs, yt, ys = train_test_split(adf, targets)
+model.fit(Xt, yt, epochs=200, validation_data=(Xs, ys),
+          callbacks=k_calls)
 
-res_df = pd.DataFrame(index=tdf.index, columns=lin_df.columns)
-for season, grp in res_df.groupby(['Season']):
-    if season in total_df.index.get_level_values(0):
-        adf = st.getMatches(grp, total_df)
-        res_df.loc[grp.index] = model.predict(adf) * \
-            lin_std.loc[season].values[None, :] + lin_mu.loc[season].values[None, :]
+adf = st.getMatches(tdf, total_df)
+res_df = pd.DataFrame(index=tdf.index, columns=lin_df.columns, data=model.predict(adf) * \
+    lin_std.loc[season].values[None, :] + lin_mu.loc[season].values[None, :])
             
 res_df = res_df.dropna().sort_index().astype(float).round().astype(int)
-tdf = tdf.loc[res_df.index, res_df.columns].sort_index()
+ntdf = tdf.loc[res_df.index, res_df.columns].sort_index()
 
-comp_df = -res_df.groupby(['GameID']).diff().dropna()
-comp_df['Winner'] = tdf_t
-comp_df['isCorrect'] = (comp_df['T_Score'] > 0) ^ comp_df['Winner'] == 0
+res_df['Winner'] = tdf_t
 
 #%%
 

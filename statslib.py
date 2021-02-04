@@ -674,13 +674,15 @@ Params:
                 index of [Season, TID].
     season: int - set this to get a particular season of the frame passed to
                 gids.
+    diff: bool - set this to True if you want differences between teams, not
+                a frame with both teams' stats.
 
 Returns:
-    g1: DataFrame - Frame with team_feats columns for both teams, using gids'
+    fdf: DataFrame - Frame with team_feats columns for both teams, using gids'
                 index.
 '''
         
-def getMatches(gids, team_feats, season=None):
+def getMatches(gids, team_feats, season=None, diff=False):
     if season is not None:
         g = gids.loc(axis=0)[:, season, :, :]
     else:
@@ -690,7 +692,8 @@ def getMatches(gids, team_feats, season=None):
     g1 = gsc.merge(team_feats, on=['Season', 'TID']).set_index(ids)
     g2 = gsc.merge(team_feats, left_on=['Season', 'OID'],
                    right_on=['Season', 'TID']).set_index(ids)
-    return g1.merge(g2, on=ids)
+    fdf = g1 - g2 if diff else g1.merge(g2, on=ids)
+    return fdf
     
         
 def getAllMatches(sts, season, transform=None):

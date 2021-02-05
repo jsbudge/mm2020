@@ -94,7 +94,7 @@ good_seasons = [True if idx[1] in tdf_seas else False for idx, row in lin_df.ite
 targets = lin_df.loc[good_seasons].sort_index()
 adf = st.getMatches(lin_df.loc[good_seasons], total_df).sort_index()
 Xt, Xs, yt, ys = train_test_split(adf, targets)
-model.fit(Xt, yt, epochs=200, validation_data=(Xs, ys),
+model.fit(Xt, yt, epochs=10, validation_data=(Xs, ys),
           callbacks=k_calls)
 
 adf = st.getMatches(tdf, total_df)

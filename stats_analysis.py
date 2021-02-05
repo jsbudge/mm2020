@@ -14,39 +14,47 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import statslib as st
 from tqdm import tqdm
-from itertools import combinations
-import framelib as fl
-import featurelib as feat
 import seaborn as sns
 import eventlib as ev
-from sklearn.preprocessing import StandardScaler, PowerTransformer, PolynomialFeatures, OneHotEncoder
 from scipy.stats import multivariate_normal as mvn
 from scipy.stats import iqr
 plt.close('all')
 
-files = st.getFiles()
+def getAllAverages(tid):
+    ret = pd.DataFrame()
+    for av in avs:
+        t = avs[av].loc(axis=0)[:, tid].reset_index()
+        t['AvType'] = av
+        ret = ret.append(t)
+    return ret.set_index(['Season', 'TID', 'AvType'])
+
+sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
+avs = {}
+m_types = ['relelo', 'gausselo', 'elo', 'rank', 'mest', 'mean']
+for m in tqdm(m_types):
+    avs[m] = st.getSeasonalStats(sdf, strat=m)
+tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
+adv_tdf = st.getTourneyStats(tdf, sdf) 
+pdf = ev.getTeamRosters()
+tsdf = pd.read_csv('./data/PlayerAnalysisData.csv').set_index(['Season', 'TID'])
+print('Scaling for influence...')
+inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
+
+#%%
+print('Differencing...')
+diff_df = pd.DataFrame(index=sdf.index, data=sdf[['O_Rank', 'T_Elo', 'O_Elo',
+                                                  'T_Score', 'O_Score']])
+for col in [col for col in sdf.columns if 'T_' in col]:
+    diff_df[col[2:] + 'Diff'] = sdf[col] - sdf['O_' + col[2:]]
+diff_avs = {}
+for m in tqdm(m_types):
+    diff_avs[m] = st.getSeasonalStats(diff_df, strat=m)
+    
 #%%
 
-nspl = 5
-scale = StandardScaler()
-unscale_df = fl.arrangeFrame(files, scaling=scale, noinfluence=True)
-games = fl.arrangeTourneyGames(files, noraw=True)
-sdf = unscale_df[0]
-score_diff = sdf['T_Score'] - sdf['O_Score']
-rank_diff = sdf['T_Rank'] - sdf['O_Rank']
-elo_diff = sdf['T_Elo'] - sdf['O_Elo']
-avrelo = st.getSeasonalStats(sdf, strat='relelo').drop(columns=['T_Win%', 'T_PythWin%', 'T_SoS'])
-#%%
+#First, how much does any particular stat predict winning?
 
-tdf = sdf.drop(columns=[c for c in sdf.columns if c[:1] == 'O'] + ['DayNum'])
-tdf['Rank_Diff'] = rank_diff
-tdf['Elo_Diff'] = elo_diff
 
-avtdf = avrelo.drop(columns=[c for c in sdf.columns if c[:1] == 'O'])
-avtdf['Rank_Diff'] = tdf.groupby(['Season', 'TID']).mean()['Rank_Diff']
-avtdf['Elo_Diff'] = tdf.groupby(['Season', 'TID']).mean()['Elo_Diff']
-
-av_cov = tdf.groupby(['Season', 'TID']).apply(lambda x: np.cov(x.T))
     
 
 

@@ -10,7 +10,7 @@ import os
 from tqdm import tqdm
 from scipy.linalg import solve
 from scipy.interpolate import CubicSpline
-from scipy.stats import hmean
+from scipy.stats import hmean, iqr
 import statsmodels.api as sm
 from sklearn.preprocessing import RobustScaler
 from sklearn.ensemble import RandomForestRegressor
@@ -234,6 +234,7 @@ Returns:
 def getStats(df):
     wdf = df[id_cols].copy()
     wdf['T_FG%'] = df['T_FGM'] / df['T_FGA']
+    wdf['T_FG3%'] = df['T_FGM3'] / df['T_FGA3']
     wdf['T_PPS'] = (df['T_Score'] - df['T_FTM']) / df['T_FGA']
     wdf['T_eFG%'] = (df['T_FGM'] + .5 * df['T_FGM3']) / df['T_FGA']
     wdf['T_TS%'] = df['T_Score'] / (2 * (df['T_FGA'] + .44 * df['T_FTA']))
@@ -249,6 +250,7 @@ def getStats(df):
     wdf['T_ExtraPoss'] = df['T_OR'] + df['T_Stl'] + df['O_PF']
      
     wdf['O_FG%'] = df['O_FGM'] / df['O_FGA']
+    wdf['O_FG3%'] = df['O_FGM3'] / df['O_FGA3']
     wdf['O_PPS'] = (df['O_Score'] - df['O_FTM']) / df['O_FGA']
     wdf['O_eFG%'] = (df['O_FGM'] + .5 * df['O_FGM3']) / df['O_FGA']
     wdf['O_TS%'] = df['O_Score'] / (2 * (df['O_FGA'] + .44 * df['O_FTA']))
@@ -288,14 +290,18 @@ Params:
 Returns:
     wdf: DataFrame - a frame with the calculated stats.
 '''
-def getInfluenceStats(df, save=True, recalc=False):
+def getInfluenceStats(df, save=True, recalc=False, norm=False):
     if not recalc:
         return pd.read_csv('./data/influence_stats.csv')
     scale_df = df.groupby(['Season', 'TID']).apply(lambda x: (x - x.mean()) / x.std())
+    scale_std = df.groupby(['Season']).std()
     inf_df = scale_df.groupby(['Season', 'OID']).mean()
+    for idx, grp in inf_df.groupby(['Season']):
+        inf_df.loc[grp.index] = grp * scale_std.loc[idx]
     inf_df = inf_df.drop(columns=[col for col in inf_df.columns if 'O_' in col])
     inf_df = inf_df.reset_index().rename(columns={'OID': 'TID'}).set_index(['Season', 'TID'])
-    inf_df = normalizeToSeason(inf_df)
+    if norm:
+        inf_df = normalizeToSeason(inf_df)
     inf_df.columns = [col + 'Inf' for col in inf_df.columns]
     if save:
         inf_df.to_csv('./data/influence_stats.csv')
@@ -338,8 +344,8 @@ def getSeasonalStats(df, strat='rank', seasonal_only=False):
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights= .1 / abs(x['T_Elo'] - x['O_Elo']).values**(1/4)))
         elif strat == 'gausselo':
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights=1 / (100 * np.sqrt(2 * np.pi)) * np.exp(-.5 * ((x['T_Elo'] - x['O_Elo']).values / 100)**2)))
-        elif strat == 'hmean':
-            data = dfapp.apply(lambda x: hmean(x + abs(x.min()) + .01, axis=0) - abs(x.min()) - .01)
+        elif strat == 'mest':
+            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=1 / (iqr(x, axis=0) * np.sqrt(2 * np.pi)) * np.exp(-.5 * ((x - x.median()).values / iqr(x, axis=0))**2)))
         elif strat == 'mean':
             data = dfapp.mean()
         for idx, row in wdf.iterrows():
@@ -616,8 +622,12 @@ Returns:
     All frames use GameID, Season, TID, OID as their indexes.
 '''
 
-def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False):
-    ts = getGames(season=season).drop(columns=['NumOT', 'GLoc'])
+def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False,
+                 split=False):
+    if split:
+        ts = getGames(season=season, split=True)[0].drop(columns=['NumOT', 'GLoc'])
+    else:
+        ts = getGames(season=season).drop(columns=['NumOT', 'GLoc'])
     ty = ts['T_Score'] > ts['O_Score'] - 0
     if noraw:
         ts = joinFrame(ts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],

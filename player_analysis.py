@@ -42,48 +42,11 @@ def getTeamRosterData(team, rosters, games, df, season):
         
 season = 2016
 save_to_csv = False
-
-if save_to_csv:
-    av_df = pd.DataFrame()
-    m_df = pd.DataFrame()
-    pdf = ev.getTeamRosters()
-    for seas in [2015, 2016, 2017, 2018, 2019, 2020]:
-        games, roster_df = ev.getRosters(seas)
-        games.to_csv('./data/{}/Games{}.csv'.format(seas, seas))
-        roster_df.to_csv('./data/{}/Rosters{}.csv'.format(seas, seas))
-        sdf = st.arrangeFrame(season, scaling=None, noinfluence=True)[0]
-        games = pd.read_csv('./data/{}/Games{}.csv'.format(seas, seas)).set_index(['GameID'])
-        roster_df = pd.read_csv('./data/{}/Rosters{}.csv'.format(seas, seas)).set_index(['GameID', 'PlayerID'])
-        sdf1 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['TID', 'OID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
-        sdf2 = sdf[['DayNum', 'T_Poss', 'T_Ast', 'T_Score', 'T_OR', 'T_DR', 'T_Elo', 'O_Elo']].merge(games.reset_index(), left_on=['OID', 'TID', 'DayNum'], right_on=['WTeamID', 'LTeamID', 'DayNum'])
-        sdf = sdf1.rename(columns={'WTeamID': 'TID'}).set_index(['GameID', 'TID']).append( \
-            sdf2.rename(columns={'LTeamID': 'TID'}).set_index(['GameID', 'TID'])).drop( \
-            columns=['DayNum', 'WTeamID', 'LTeamID']).sort_index()                                
-        scale_df = ev.getRateStats(roster_df, sdf, pdf)
-        roster_df = roster_df.merge(scale_df, on=['GameID', 'PlayerID'])
-        sum_df = roster_df.groupby(['PlayerID']).sum()
-        tmp_df = ev.getAdvStats(sum_df)
-        tmp_df['Season'] = seas
-        tmp_df['Mins'] = sum_df['Mins']
-        tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
-        av_df = av_df.append(tmp_df)
-        tmp_df = roster_df.groupby(['PlayerID']).mean()
-        tmp_df['Season'] = seas
-        tmp_df = tmp_df.reset_index().set_index(['Season', 'PlayerID'])
-        m_df = m_df.append(tmp_df)
-    av_df = av_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
-    av_df = av_df.rename(columns={'TeamID': 'TID'})
-    av_df = av_df.reset_index().set_index(['Season', 'PlayerID', 'TID'])
-    m_df = m_df.merge(pdf['TeamID'], on='PlayerID', right_index=True)
-    m_df = m_df.rename(columns={'TeamID': 'TID'})
-    m_df = m_df.reset_index().set_index(['Season', 'PlayerID', 'TID'])
-    av_df.to_csv('./data/AVRosterData.csv')
-    m_df.to_csv('./data/MeanRosterData.csv')
 print('Loading player data...')
 sdf = st.arrangeFrame(scaling=None, noinfluence=True)[0]
 savdf = st.getSeasonalStats(sdf, strat='relelo')
 tdf = st.arrangeTourneyGames()[0]
-adv_tdf = st.getTourneyStats(tdf, sdf) 
+adv_tdf = st.getTourneyStats(tdf, sdf)
 pdf = ev.getTeamRosters()
 #%%
 

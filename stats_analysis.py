@@ -17,8 +17,28 @@ from tqdm import tqdm
 import seaborn as sns
 import eventlib as ev
 from scipy.stats import multivariate_normal as mvn
-from scipy.stats import iqr
+from scipy.stats import iqr, chi2_contingency
+from sklearn.metrics import mutual_info_score
 plt.close('all')
+
+def getPairwiseMI(A, adj=False):
+    calc_MI = lambda x, y, bins: \
+        mutual_info_score(None, None, 
+                          contingency = np.histogram2d(x, y, bins)[0])
+    be = {}
+    for col in A.columns:
+        be[col] = np.histogram_bin_edges(A[col], 'fd')
+    matMI = pd.DataFrame(index=A.columns, columns=A.columns)
+    for ix in A.columns:
+        for jx in A.columns:
+            matMI.loc[ix, jx] = calc_MI(A[ix].values, 
+                                        A[jx].values, [be[ix], be[jx]])
+    if adj:
+        kx = np.linalg.pinv(np.sqrt(np.diag(np.diag(matMI.astype(float)))))
+        return pd.DataFrame(index=A.columns,
+                            columns=A.columns,
+                            data=kx.dot(matMI).dot(kx)).astype(float)
+    return matMI.astype(float)
 
 def getAllAverages(tid):
     ret = pd.DataFrame()
@@ -30,34 +50,28 @@ def getAllAverages(tid):
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 avs = {}
-m_types = ['relelo', 'gausselo', 'elo', 'rank', 'mest', 'mean']
+m_types = ['relelo', 'gausselo', 'elo', 'rank', 'mest', 'mean', 'recent']
 for m in tqdm(m_types):
     avs[m] = st.getSeasonalStats(sdf, strat=m)
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
-adv_tdf = st.getTourneyStats(tdf, sdf) 
+adv_tdf = st.getTourneyStats(tdf, sdf)
 pdf = ev.getTeamRosters()
 tsdf = pd.read_csv('./data/PlayerAnalysisData.csv').set_index(['Season', 'TID'])
 print('Scaling for influence...')
 inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
 
 #%%
-print('Differencing...')
-diff_df = pd.DataFrame(index=sdf.index, data=sdf[['O_Rank', 'T_Elo', 'O_Elo',
-                                                  'T_Score', 'O_Score']])
-for col in [col for col in sdf.columns if 'T_' in col]:
-    diff_df[col[2:] + 'Diff'] = sdf[col] - sdf['O_' + col[2:]]
-diff_avs = {}
-for m in tqdm(m_types):
-    diff_avs[m] = st.getSeasonalStats(diff_df, strat=m)
-    
+t_inf = st.getMatches(tdf, inf_df, diff=True)
+t_ps = st.getMatches(tdf, tsdf, diff=True)
+t_adv = st.getMatches(tdf, adv_tdf.drop(columns=['T_RoundRank']), diff=True)
+av_tdf = st.getMatches(tdf, avs['recent'], diff=True)
+tdf_diff = st.merge(av_tdf, t_inf, t_ps, t_adv)
+tdf_diff['ActualScoreDiff'] = tdf.loc[tdf_diff.index, 'T_Score'] - tdf.loc[tdf_diff.index, 'O_Score']
+
 #%%
-
-#First, how much does any particular stat predict winning?
-
-
-    
-
-
+#Grouping together using mutual information and correlation metrics
+mi_df = getPairwiseMI(tdf_diff, True)
+corr_df = abs(tdf_diff.corr())
 
 
 

@@ -346,6 +346,8 @@ def getSeasonalStats(df, strat='rank', seasonal_only=False):
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights=1 / (100 * np.sqrt(2 * np.pi)) * np.exp(-.5 * ((x['T_Elo'] - x['O_Elo']).values / 100)**2)))
         elif strat == 'mest':
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights=1 / (iqr(x, axis=0) * np.sqrt(2 * np.pi)) * np.exp(-.5 * ((x - x.median()).values / iqr(x, axis=0))**2)))
+        elif strat == 'recent':
+            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=np.arange(x.shape[0])**2))
         elif strat == 'mean':
             data = dfapp.mean()
         for idx, row in wdf.iterrows():

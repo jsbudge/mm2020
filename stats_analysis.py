@@ -20,14 +20,12 @@ from scipy.stats import multivariate_normal as mvn
 from scipy.stats import iqr, chi2_contingency
 from scipy.interpolate import CubicSpline
 from sklearn.metrics import mutual_info_score, log_loss
+from sklearn.model_selection import train_test_split
 from sklearn.cluster import FeatureAgglomeration
-from sklearn.decomposition import KernelPCA
-from sklearn.gaussian_process import GaussianProcessClassifier
-from sklearn.feature_selection import RFE
-from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
-from sklearn.svm import SVC
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.ensemble import RandomForestRegressor
+import sklearn.linear_model as sk_lm
 from itertools import combinations
-from scipy.optimize import minimize
 plt.close('all')
 
 def getPairwiseMI(A, adj=False):
@@ -93,16 +91,21 @@ print('Scaling for influence...')
 inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
 
 #%%
-t_inf = st.getMatches(tdf, inf_df, diff=True)
-t_ps = st.getMatches(tdf, tsdf, diff=True)
+av_drops = ['T_Rank', 'O_Rank', 'T_Elo', 'O_Elo',
+            'T_Win%', 'T_PythWin%', 'T_SoS']
+t_inf = st.getMatches(sdf, inf_df, diff=True)
+t_ps = st.getMatches(sdf, tsdf, diff=True)
 t_adv = st.getMatches(tdf, adv_tdf.drop(columns=['T_RoundRank']), diff=True)
-av_tdf = st.getMatches(tdf, avs['recent'], diff=True)
-tdf_diff = st.merge(av_tdf, t_inf, t_ps, t_adv)
+av_tdf = st.getMatches(sdf, avs['mest'], diff=True).drop(columns=av_drops)
+avrec_tdf = st.getMatches(sdf, avs['recent'], diff=True).drop(columns=av_drops)
+tdf_diff = st.merge(av_tdf, t_inf, avrec_tdf, t_ps)
 
 #%%
 ntdiff = tdf_diff.dropna()
-#ntdiff = ntdiff.loc[ntdiff.index.get_level_values(0).duplicated(keep='last')]
-scores = tdf.loc[ntdiff.index, 'T_Score'] - tdf.loc[ntdiff.index, 'O_Score']
+ntdiff = ntdiff.drop(columns=['T_RankInf',
+                              'T_EloInf', 'DayNumInf'])
+ntdiff = ntdiff.loc[ntdiff.index.get_level_values(0).duplicated(keep='last')]
+scores = sdf.loc[ntdiff.index, 'T_Score'] - sdf.loc[ntdiff.index, 'O_Score']
 for s, grp in ntdiff.groupby(['Season']):
     ntdiff.loc[grp.index] = (grp - grp.mean()) / grp.std()
 
@@ -136,7 +139,7 @@ print('Combining similar stats...')
 #Combine the ones that are close to each other
 for n in range(20, ntdiff.shape[1] - 1):
     sc, lb = overallScore(n, sc_df, np.min)
-    if sc >= .7:
+    if sc >= .8:
         print('{} clusters: {:.2f}'.format(n, sc))
         for l in lb:
             mcol = l[0]
@@ -149,37 +152,20 @@ for n in range(20, ntdiff.shape[1] - 1):
         break
     
 #%%
-kdf = ntdiff.astype(np.float32)
-n_comp = kdf.shape[1]
-
-tr_s = np.random.permutation(np.arange(kdf.shape[0]))[:int(kdf.shape[0] * .75)]
-te_s = [n for n in range(kdf.shape[0]) if n not in tr_s]
-yt = scores.values[tr_s]
-ys = scores.values[te_s]
-Xt = kdf.iloc[tr_s]
-Xs = kdf.iloc[te_s]
-
-svr = SVC(kernel='linear')
-rfe_select = RFE(svr)
-rfe_select.fit(Xt, yt > 0)
-sel_cols = kdf.columns[rfe_select.ranking_ == 1]
-
-#%%
-est_res = pd.DataFrame(columns=['n_tr', 'crit', 'acc', 'log_likelihood'])
-counter = 0
-for n_tr in tqdm(np.arange(10, 1000, 5)):
-    for criterion in ['gini', 'entropy']:
-        rfc = RandomForestClassifier(n_estimators=n_tr,
-                                     criterion=criterion).fit(Xt[sel_cols], yt > 0)
-        est_res.loc[counter] = [n_tr, criterion, rfc.score(Xs[sel_cols], ys > 0), 
-                                 log_loss(ys > 0, rfc.predict_proba(Xs[sel_cols])[:, 1])]
-        counter += 1
-        
-def min_func(n_tr):
-    rfc = RandomForestClassifier(n_estimators=n_tr).fit(Xt[sel_cols], yt > 0)
-    return 1 - rfc.score(Xs[sel_cols], ys > 0)
-
-ntree_opt = integerOpt(min_func, [10, 1000], 20)
-rfc = RandomForestClassifier(n_estimators=ntree_opt).fit(Xt[sel_cols], yt > 0)
-print('High score is {} trees with {:.2f}% acc.'.format(ntree_opt, 
-                                                        rfc.score(Xs[sel_cols], ys > 0) * 100))
+print('Running regressions...')
+gpr = GaussianProcessRegressor()
+rfr = RandomForestRegressor(n_estimators=500)
+logr = sk_lm.LogisticRegression(max_iter=200)
+bayr = sk_lm.BayesianRidge()
+Xt, Xs, yt, ys = train_test_split(ntdiff, scores)
+#An attempt to create a team-average relative quality stat
+#gpr.fit(Xt, yt)
+rfr.fit(Xt, yt)
+logr.fit(Xt, yt)
+bayr.fit(Xt, yt)
+res_df = pd.DataFrame()
+#res_df['GPR'] = gpr.predict(Xs)
+res_df['RFR'] = rfr.predict(Xs)
+res_df['LOG'] = logr.predict(Xs)
+res_df['BAY'] = bayr.predict(Xs)
+res_df['true'] = ys.values

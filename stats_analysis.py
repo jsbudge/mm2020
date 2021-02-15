@@ -139,7 +139,7 @@ print('Combining similar stats...')
 #Combine the ones that are close to each other
 for n in range(20, ntdiff.shape[1] - 1):
     sc, lb = overallScore(n, sc_df, np.min)
-    if sc >= .8:
+    if sc >= .7:
         print('{} clusters: {:.2f}'.format(n, sc))
         for l in lb:
             mcol = l[0]
@@ -153,13 +153,12 @@ for n in range(20, ntdiff.shape[1] - 1):
     
 #%%
 print('Running regressions...')
-gpr = GaussianProcessRegressor()
-rfr = RandomForestRegressor(n_estimators=500)
-logr = sk_lm.LogisticRegression(max_iter=200)
-bayr = sk_lm.BayesianRidge()
 Xt, Xs, yt, ys = train_test_split(ntdiff, scores)
+rfr = RandomForestRegressor(n_estimators=500)
+logr = sk_lm.LogisticRegression(max_iter=1400)
+bayr = sk_lm.BayesianRidge()
+
 #An attempt to create a team-average relative quality stat
-#gpr.fit(Xt, yt)
 rfr.fit(Xt, yt)
 logr.fit(Xt, yt)
 bayr.fit(Xt, yt)
@@ -169,3 +168,7 @@ res_df['RFR'] = rfr.predict(Xs)
 res_df['LOG'] = logr.predict(Xs)
 res_df['BAY'] = bayr.predict(Xs)
 res_df['true'] = ys.values
+res_df.index = Xs.index
+
+#%%
+

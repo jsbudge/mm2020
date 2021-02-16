@@ -708,28 +708,23 @@ def getMatches(gids, team_feats, season=None, diff=False):
     return fdf
     
         
-def getAllMatches(sts, season, transform=None):
+def getAllMatches(team_feats, season, diff=False):
     sd = pd.read_csv('./data/MNCAATourneySeeds.csv')
     sd = sd.loc[sd['Season'] == season]['TeamID'].values
     teams = list(set(sd))
     matches = [[x, y] for (x, y) in permutations(teams, 2)]
     poss_games = pd.DataFrame(data=matches, columns=['TID', 'OID'])
     poss_games['Season'] = season; poss_games['GameID'] = np.arange(poss_games.shape[0])
-    poss_games = poss_games.set_index(['GameID', 'Season', 'TID', 'OID'])
-    ttl = pd.DataFrame(index=poss_games.index).merge(sts, 
-                                            left_on=['Season', 'OID'], 
-                                            right_on=['Season', 'TID'], 
-                                            right_index=True).sort_index(level=0)
-    ttw = pd.DataFrame(index=poss_games.index).merge(sts, 
-                                            left_on=['Season', 'TID'], 
-                                            right_on=['Season', 'OID'], 
-                                            right_index=True).sort_index(level=0)
-    if transform is None:
-        return ttw - ttl
-    else:
-        return pd.DataFrame(index=ttw.index, 
-                            columns=ttw.columns, 
-                            data=transform.transform(ttw-ttl))
+    gsc = poss_games.set_index(['GameID', 'Season'])
+    g1 = gsc.merge(team_feats, on=['Season', 'TID'], 
+                   right_index=True).sort_index()
+    g1 = g1.reset_index().set_index(['GameID', 'Season', 'TID', 'OID'])
+    g2 = gsc.merge(team_feats, left_on=['Season', 'OID'],
+                   right_on=['Season', 'TID'],
+                   right_index=True).sort_index()
+    g2 = g2.reset_index().set_index(['GameID', 'Season', 'TID', 'OID'])
+    fdf = g1 - g2 if diff else g1.merge(g2, on=['GameID', 'Season', 'TID', 'OID'])
+    return fdf
 
 def merge(*args):
     df = None

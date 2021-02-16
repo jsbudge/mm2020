@@ -104,7 +104,7 @@ tdf_diff = st.merge(av_tdf, t_inf, avrec_tdf, t_ps)
 ntdiff = tdf_diff.dropna()
 ntdiff = ntdiff.drop(columns=['T_RankInf',
                               'T_EloInf', 'DayNumInf'])
-ntdiff = ntdiff.loc[ntdiff.index.get_level_values(0).duplicated(keep='last')]
+#ntdiff = ntdiff.loc[ntdiff.index.get_level_values(0).duplicated(keep='last')]
 scores = sdf.loc[ntdiff.index, 'T_Score'] - sdf.loc[ntdiff.index, 'O_Score']
 for s, grp in ntdiff.groupby(['Season']):
     ntdiff.loc[grp.index] = (grp - grp.mean()) / grp.std()
@@ -171,4 +171,23 @@ res_df['true'] = ys.values
 res_df.index = Xs.index
 
 #%%
+#An attempt to get a tournament ranking
+allT = pd.DataFrame()
+for seas in list(set(ntdiff.index.get_level_values(1))):
+    allT = allT.append(st.getAllMatches(ntdiff.groupby(['Season', 'TID']).mean(), seas, True))
+met_df = pd.DataFrame()
 
+met_df['RFR'] = rfr.predict(allT)
+met_df['LOG'] = logr.predict(allT)
+met_df['BAY'] = bayr.predict(allT)
+met_df.index = allT.index
+mdf_group = met_df.groupby(['Season', 'TID'])
+metric = mdf_group.sum()
+metric = metric.merge(mdf_group.mean(), on=['Season', 'TID'])
+metric = metric.merge(avs['recent'][['T_Rank', 'T_Elo']], on=['Season', 'TID'])
+metric = metric.join(adv_tdf[['T_Seed', 'T_RoundRank']], on=['Season', 'TID'])
+
+lsq = np.linalg.lstsq(metric[['RFR_x', 'LOG_x', 'BAY_x']].values,
+                      metric['T_RoundRank'].values, rcond=None)
+
+metric['LSTSQ'] = metric[['RFR_x', 'LOG_x', 'BAY_x']].values.dot(lsq[0])

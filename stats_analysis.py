@@ -18,6 +18,7 @@ import seaborn as sns
 import eventlib as ev
 from scipy.stats import multivariate_normal as mvn
 from scipy.stats import iqr, chi2_contingency
+from scipy.stats.mstats import gmean, hmean
 from scipy.interpolate import CubicSpline
 from sklearn.metrics import mutual_info_score, log_loss
 from sklearn.model_selection import train_test_split
@@ -93,12 +94,9 @@ inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
 #%%
 av_drops = ['T_Rank', 'O_Rank', 'T_Elo', 'O_Elo',
             'T_Win%', 'T_PythWin%', 'T_SoS']
-t_inf = st.getMatches(sdf, inf_df, diff=True)
-t_ps = st.getMatches(sdf, tsdf, diff=True)
-t_adv = st.getMatches(tdf, adv_tdf.drop(columns=['T_RoundRank']), diff=True)
-av_tdf = st.getMatches(sdf, avs['mest'], diff=True).drop(columns=av_drops)
-avrec_tdf = st.getMatches(sdf, avs['recent'], diff=True).drop(columns=av_drops)
-tdf_diff = st.merge(av_tdf, t_inf, avrec_tdf, t_ps)
+cong_df = st.merge(inf_df, tsdf, avs['mest'].drop(columns=av_drops),
+                   avs['recent'].drop(columns=av_drops))
+tdf_diff = st.getMatches(sdf, cong_df, diff=True)
 
 #%%
 ntdiff = tdf_diff.dropna()
@@ -155,7 +153,7 @@ for n in range(20, ntdiff.shape[1] - 1):
 print('Running regressions...')
 Xt, Xs, yt, ys = train_test_split(ntdiff, scores)
 rfr = RandomForestRegressor(n_estimators=500)
-logr = sk_lm.LogisticRegression(max_iter=1400)
+logr = sk_lm.LogisticRegression(max_iter=400)
 bayr = sk_lm.BayesianRidge()
 
 #An attempt to create a team-average relative quality stat
@@ -163,7 +161,6 @@ rfr.fit(Xt, yt)
 logr.fit(Xt, yt)
 bayr.fit(Xt, yt)
 res_df = pd.DataFrame()
-#res_df['GPR'] = gpr.predict(Xs)
 res_df['RFR'] = rfr.predict(Xs)
 res_df['LOG'] = logr.predict(Xs)
 res_df['BAY'] = bayr.predict(Xs)
@@ -174,7 +171,7 @@ res_df.index = Xs.index
 #An attempt to get a tournament ranking
 allT = pd.DataFrame()
 for seas in list(set(ntdiff.index.get_level_values(1))):
-    allT = allT.append(st.getAllMatches(ntdiff.groupby(['Season', 'TID']).mean(), seas, True))
+    allT = allT.append(st.getAllMatches(cong_df[ntdiff.columns], seas, True))
 met_df = pd.DataFrame()
 
 met_df['RFR'] = rfr.predict(allT)
@@ -182,12 +179,10 @@ met_df['LOG'] = logr.predict(allT)
 met_df['BAY'] = bayr.predict(allT)
 met_df.index = allT.index
 mdf_group = met_df.groupby(['Season', 'TID'])
-metric = mdf_group.sum()
-metric = metric.merge(mdf_group.mean(), on=['Season', 'TID'])
+metric = mdf_group.sum() / 67
+metric = metric.merge(mdf_group.apply(lambda x: np.sum(x > 0)), on=['Season', 'TID'])
 metric = metric.merge(avs['recent'][['T_Rank', 'T_Elo']], on=['Season', 'TID'])
 metric = metric.join(adv_tdf[['T_Seed', 'T_RoundRank']], on=['Season', 'TID'])
 
-lsq = np.linalg.lstsq(metric[['RFR_x', 'LOG_x', 'BAY_x']].values,
-                      metric['T_RoundRank'].values, rcond=None)
-
-metric['LSTSQ'] = metric[['RFR_x', 'LOG_x', 'BAY_x']].values.dot(lsq[0])
+metric['GeoSCR'] = gmean(metric[['RFR_y', 'LOG_y', 'BAY_y']].values, axis=1)
+metric['MeanSCR'] = metric[['RFR_x', 'LOG_x', 'BAY_x']].mean(axis=1)

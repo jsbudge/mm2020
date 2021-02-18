@@ -153,16 +153,13 @@ for n in range(20, ntdiff.shape[1] - 1):
 print('Running regressions...')
 Xt, Xs, yt, ys = train_test_split(ntdiff, scores)
 rfr = RandomForestRegressor(n_estimators=500)
-logr = sk_lm.LogisticRegression(max_iter=400)
 bayr = sk_lm.BayesianRidge()
 
 #An attempt to create a team-average relative quality stat
 rfr.fit(Xt, yt)
-logr.fit(Xt, yt)
 bayr.fit(Xt, yt)
 res_df = pd.DataFrame()
 res_df['RFR'] = rfr.predict(Xs)
-res_df['LOG'] = logr.predict(Xs)
 res_df['BAY'] = bayr.predict(Xs)
 res_df['true'] = ys.values
 res_df.index = Xs.index
@@ -175,14 +172,17 @@ for seas in list(set(ntdiff.index.get_level_values(1))):
 met_df = pd.DataFrame()
 
 met_df['RFR'] = rfr.predict(allT)
-met_df['LOG'] = logr.predict(allT)
 met_df['BAY'] = bayr.predict(allT)
 met_df.index = allT.index
 mdf_group = met_df.groupby(['Season', 'TID'])
-metric = mdf_group.sum() / 67
+metric = mdf_group.sum() / 68
 metric = metric.merge(mdf_group.apply(lambda x: np.sum(x > 0)), on=['Season', 'TID'])
 metric = metric.merge(avs['recent'][['T_Rank', 'T_Elo']], on=['Season', 'TID'])
 metric = metric.join(adv_tdf[['T_Seed', 'T_RoundRank']], on=['Season', 'TID'])
 
-metric['GeoSCR'] = gmean(metric[['RFR_y', 'LOG_y', 'BAY_y']].values, axis=1)
-metric['MeanSCR'] = metric[['RFR_x', 'LOG_x', 'BAY_x']].mean(axis=1)
+metric['GeoSCR'] = gmean(metric[['RFR_y', 'BAY_y']].values, axis=1)
+metric['MeanSCR'] = metric[['RFR_x', 'BAY_x']].mean(axis=1)
+
+#%%
+#Save everything out to a file so we can move between scripts easily
+cong_df[ntdiff.columns].to_csv('./data/CongStats.csv')

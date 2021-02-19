@@ -17,17 +17,9 @@ from tqdm import tqdm
 from itertools import combinations
 import seaborn as sns
 import eventlib as ev
-from sklearn.preprocessing import StandardScaler, PowerTransformer, PolynomialFeatures, OneHotEncoder
-import sklearn.cluster as clustering
-import sklearn.linear_model as reg
-import sklearn.neural_network as nn
-import sklearn.decomposition as decomp
-from sklearn.pipeline import make_pipeline, FeatureUnion, make_union
-from sklearn.ensemble import StackingClassifier, RandomForestClassifier, AdaBoostRegressor
-from sklearn.model_selection import StratifiedKFold, GridSearchCV, train_test_split, KFold
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.feature_selection import f_regression, mutual_info_classif, SelectPercentile
-from scipy.stats import multivariate_normal as mvn
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import log_loss
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model, load_model
@@ -45,15 +37,11 @@ optimizer: the optimization method for the model. Adam is the default,
             but there are plenty of others.
 '''
 def compile_model(state_sz, layer_sz, n_layers, optimizer='adam', metrics=['accuracy']):
-    dropout_rate = .4
+    dropout_rate = .5
     inp = keras.Input(shape=(state_sz[1],))
-    out = layers.Dense(layer_sz, activation='relu', name='conc_dense',
-                           kernel_regularizer=regularizers.l2(1e-1),
-                           bias_regularizer=regularizers.l2(1e-1))(inp)
-    out = layers.Flatten()(out)
     out = layers.Dense(layer_sz, activation='relu', name='init_dense',
                            kernel_regularizer=regularizers.l2(1e-1),
-                           bias_regularizer=regularizers.l2(1e-1))(out)
+                           bias_regularizer=regularizers.l2(1e-1))(inp)
     out = layers.Dropout(dropout_rate)(out)
     for n in range(n_layers):
         out = layers.Dense(layer_sz, activation='relu',
@@ -75,25 +63,34 @@ def rescale(df, scaler):
     return pd.DataFrame(index=df.index, columns=df.columns,
                         data=scaler.transform(df))
 
+def shuffle(df):
+    idx = np.random.permutation(np.arange(df.shape[0]))
+    return df.iloc[idx], idx
+
 #%%
 
-tune_hyperparams = True
+tune_hyperparams = False
 scale = StandardScaler()
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
+sdf_t.index = sdf.index
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
 adv_tdf = st.getTourneyStats(tdf, sdf)
 st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
 
-st_df = st_df.merge(adv_tdf.drop(columns=['T_RoundRank']), on=['Season', 'TID'])
-ml_df = st.getMatches(tdf, st_df, diff=True)
-target = OneHotEncoder(sparse=False).fit_transform(tdf_t[ml_df.index].values.reshape((-1, 1)))
+#st_df = st_df.merge(adv_tdf.drop(columns=['T_RoundRank']), on=['Season', 'TID'])
+ml_df = st.getMatches(sdf, st_df, diff=True).astype(np.float32).dropna()
+target = OneHotEncoder(sparse=False).fit_transform(sdf_t[ml_df.index].values.reshape((-1, 1)))
 
 #Benchmarks to test our net against
-elo_bench = sum(np.logical_and(ml_df['T_FinalElo'].values < 0, target[:, 0])) / ml_df.shape[0] + \
-    sum(np.logical_and(ml_df['T_FinalElo'].values > 0, target[:, 1])) / ml_df.shape[0]
-rank_bench = sum(np.logical_and(ml_df['T_FinalRank'].values > 0, target[:, 0])) / ml_df.shape[0] + \
-    sum(np.logical_and(ml_df['T_FinalRank'].values < 0, target[:, 1])) / ml_df.shape[0]
+elo_bench = sum(np.logical_and(sdf['T_Elo'].values - sdf['O_Elo'].values < 0,
+                               target[:, 0])) / ml_df.shape[0] + \
+    sum(np.logical_and(sdf['T_Elo'].values - sdf['O_Elo'].values > 0,
+                       target[:, 1])) / ml_df.shape[0]
+rank_bench = sum(np.logical_and(sdf['T_Rank'].values - sdf['O_Rank'].values > 0,
+                                target[:, 0])) / ml_df.shape[0] + \
+    sum(np.logical_and(sdf['T_Rank'].values - sdf['O_Rank'].values < 0,
+                       target[:, 1])) / ml_df.shape[0]
 #%%
 
 #Split features into a train and test set
@@ -102,8 +99,15 @@ scale.fit(Xt)
 Xt = rescale(Xt, scale)
 Xs = rescale(Xs, scale)
 
-#Do some imputing here to weight towards champs, hopefully
+#Training sets for tournament data
+tml_df = st.getMatches(tdf, st_df, diff=True).astype(np.float32).dropna()
+tml_df = rescale(tml_df, scale)
 
+#Get splits for validation data of a single tournament
+Xt_t, _ = shuffle(tml_df.loc(axis=0)[:, :2018, :, :])
+yt_t = OneHotEncoder(sparse=False).fit_transform(tdf_t[Xt_t.index].values.reshape((-1, 1)))
+Xs_t, _ = shuffle(tml_df.loc(axis=0)[:, 2019, :, :])
+ys_t = OneHotEncoder(sparse=False).fit_transform(tdf_t[Xs_t.index].values.reshape((-1, 1)))
 
 #%%
 K.clear_session()
@@ -120,17 +124,28 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
       metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
     )
 
-learn_rate = 1e-3
-num_epochs = 800
+learn_rate = 1e-4
+num_epochs = 100
+n_layers = 1
+n_nodes = 800
 logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
                     min_delta=1e-4,
                     patience=20,
-                    verbose=0,
+                    verbose=2,
                     mode="auto",
                     baseline=None,
                     restore_best_weights=True),
+            tf.keras.callbacks.ReduceLROnPlateau(
+                    monitor="val_loss",
+                    factor=0.8,
+                    patience=5,
+                    verbose=2,
+                    mode="auto",
+                    min_delta=1e-4,
+                    cooldown=0,
+                    min_lr=1e-8),
             TensorBoard(histogram_freq=3, write_images=False,
                         log_dir=logdir)]
 metrics = ['accuracy',
@@ -164,13 +179,25 @@ if tune_hyperparams:
                     tf.summary.scalar(METRIC_ACCURACY, mets[1], step=1)
                 session_num += 1
 else:
-    model = compile_model(Xt.shape, 100, 
-                        3, 
-                        optimizer = keras.optimizers.Adam(learning_rate=1e-5),
+    model = compile_model(Xt.shape, n_nodes, n_layers, 
+                        optimizer = keras.optimizers.Adam(learning_rate=learn_rate),
                         metrics=metrics)
     model.fit(Xt, yt, epochs=num_epochs, validation_data=(Xs, ys),
-              callbacks=k_calls, verbose=2, batch_size=64)
+              callbacks=k_calls, verbose=2)
 
+#%%
+
+res_df = pd.DataFrame(index=Xs_t.index)
+tids = res_df.index.get_level_values(2)
+oids = res_df.index.get_level_values(3)
+scores = tdf.loc[Xs_t.index, 'T_Score'] - tdf.loc[Xs_t.index, 'O_Score']
+base_preds = model.predict(Xs_t)
+res_df['T_Win%'] = base_preds[:, 0]
+res_df['O_Win%'] = base_preds[:, 1]
+res_df['PredWin'] = [tids[n] if base_preds[n, 0] < .5 else oids[n] for n in range(Xs_t.shape[0])]
+res_df['TrueWin'] = [tids[n] if scores.iloc[n] > 0 else oids[n] for n in range(Xs_t.shape[0])]
+res_df['logloss'] = -(ys_t[:, 0] * np.log(base_preds[:, 0]) + ys_t[:, 1] * np.log(base_preds[:, 1]))
+base_acc = sum(res_df['PredWin'] == res_df['TrueWin']) / res_df.shape[0]
 
 
 

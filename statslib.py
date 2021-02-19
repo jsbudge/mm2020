@@ -630,7 +630,6 @@ def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False,
         ts = getGames(season=season, split=True)[0].drop(columns=['NumOT', 'GLoc'])
     else:
         ts = getGames(season=season).drop(columns=['NumOT', 'GLoc'])
-    ty = ts['T_Score'] > ts['O_Score'] - 0
     if noraw:
         ts = joinFrame(ts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
                           getStats(ts))
@@ -640,6 +639,7 @@ def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False,
     ts = addElos(ts)
     ts = ts.set_index(['GameID', 'Season', 'TID', 'OID'])
     tsdays = ts['DayNum']
+    ty = ts['T_Score'] > ts['O_Score'] - 0
     if not noinfluence:
         ts = joinFrame(ts, getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
         ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])

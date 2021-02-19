@@ -94,16 +94,16 @@ inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
 #%%
 av_drops = ['T_Rank', 'O_Rank', 'T_Elo', 'O_Elo',
             'T_Win%', 'T_PythWin%', 'T_SoS']
-cong_df = st.merge(inf_df, tsdf, avs['mest'].drop(columns=av_drops),
-                   avs['recent'].drop(columns=av_drops))
-tdf_diff = st.getMatches(sdf, cong_df, diff=True)
+cong_df = st.merge(inf_df, tsdf, avs['mest'],
+                   avs['recent'])
+tdf_diff = st.getMatches(tdf, cong_df, diff=True)
 
 #%%
 ntdiff = tdf_diff.dropna()
 ntdiff = ntdiff.drop(columns=['T_RankInf',
                               'T_EloInf', 'DayNumInf'])
 #ntdiff = ntdiff.loc[ntdiff.index.get_level_values(0).duplicated(keep='last')]
-scores = sdf.loc[ntdiff.index, 'T_Score'] - sdf.loc[ntdiff.index, 'O_Score']
+scores = tdf.loc[ntdiff.index, 'T_Score'] - tdf.loc[ntdiff.index, 'O_Score']
 for s, grp in ntdiff.groupby(['Season']):
     ntdiff.loc[grp.index] = (grp - grp.mean()) / grp.std()
 

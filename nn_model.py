@@ -69,8 +69,9 @@ def shuffle(df):
 
 #%%
 
-tune_hyperparams = False
+tune_hyperparams = True
 scale = StandardScaler()
+scale_st2 = StandardScaler()
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 sdf_t.index = sdf.index
@@ -78,9 +79,9 @@ tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
 adv_tdf = st.getTourneyStats(tdf, sdf)
 st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
 
-#st_df = st_df.merge(adv_tdf.drop(columns=['T_RoundRank']), on=['Season', 'TID'])
 ml_df = st.getMatches(sdf, st_df, diff=True).astype(np.float32).dropna()
 target = OneHotEncoder(sparse=False).fit_transform(sdf_t[ml_df.index].values.reshape((-1, 1)))
+sdf = sdf.loc[ml_df.index]
 
 #Benchmarks to test our net against
 elo_bench = sum(np.logical_and(sdf['T_Elo'].values - sdf['O_Elo'].values < 0,
@@ -99,20 +100,10 @@ scale.fit(Xt)
 Xt = rescale(Xt, scale)
 Xs = rescale(Xs, scale)
 
-#Training sets for tournament data
-tml_df = st.getMatches(tdf, st_df, diff=True).astype(np.float32).dropna()
-tml_df = rescale(tml_df, scale)
-
-#Get splits for validation data of a single tournament
-Xt_t, _ = shuffle(tml_df.loc(axis=0)[:, :2018, :, :])
-yt_t = OneHotEncoder(sparse=False).fit_transform(tdf_t[Xt_t.index].values.reshape((-1, 1)))
-Xs_t, _ = shuffle(tml_df.loc(axis=0)[:, 2019, :, :])
-ys_t = OneHotEncoder(sparse=False).fit_transform(tdf_t[Xs_t.index].values.reshape((-1, 1)))
-
 #%%
 K.clear_session()
 
-HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([100, 200, 300, 400, 500, 600, 700, 800, 900]))
+HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([200, 500, 600, 700, 800, 900, 1500]))
 HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4, 5]))
 HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-3, 1e-4, 1e-5, 1e-6]))
 
@@ -125,7 +116,7 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
     )
 
 learn_rate = 1e-4
-num_epochs = 100
+num_epochs = 200
 n_layers = 1
 n_nodes = 800
 logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -180,10 +171,26 @@ if tune_hyperparams:
                 session_num += 1
 else:
     model = compile_model(Xt.shape, n_nodes, n_layers, 
-                        optimizer = keras.optimizers.Adam(learning_rate=learn_rate),
+                        optimizer = opt_adam,
                         metrics=metrics)
     model.fit(Xt, yt, epochs=num_epochs, validation_data=(Xs, ys),
               callbacks=k_calls, verbose=2)
+
+#%%
+
+tst_df = st_df.merge(adv_tdf.drop(columns=['T_RoundRank']), on=['Season', 'TID'])
+
+#Training sets for tournament data
+tml_df = st.getMatches(tdf, st_df, diff=True).astype(np.float32).dropna()
+tml_df = rescale(tml_df, scale)
+
+tdiff_df = st.getMatches(tdf, tst_df, diff=True).astype(np.float32).dropna().drop(columns=tml_df.columns)
+
+#Get splits for validation data of a single tournament
+Xt_t, _ = shuffle(tml_df.loc(axis=0)[:, :2018, :, :])
+yt_t = OneHotEncoder(sparse=False).fit_transform(tdf_t[Xt_t.index].values.reshape((-1, 1)))
+Xs_t, _ = shuffle(tml_df.loc(axis=0)[:, 2019, :, :])
+ys_t = OneHotEncoder(sparse=False).fit_transform(tdf_t[Xs_t.index].values.reshape((-1, 1)))
 
 #%%
 
@@ -199,6 +206,44 @@ res_df['TrueWin'] = [tids[n] if scores.iloc[n] > 0 else oids[n] for n in range(X
 res_df['logloss'] = -(ys_t[:, 0] * np.log(base_preds[:, 0]) + ys_t[:, 1] * np.log(base_preds[:, 1]))
 base_acc = sum(res_df['PredWin'] == res_df['TrueWin']) / res_df.shape[0]
 
+#%%
+
+Xs2_t = tdiff_df.loc[Xs_t.index]
+Xt2_t = tdiff_df.loc[Xt_t.index]
+
+scale_st2.fit(Xt2_t)
+Xt2_t = rescale(Xt2_t, scale_st2)
+Xs2_t = rescale(Xs2_t, scale_st2)
+
+#%%
+
+#Use the old model for some good ol' transfer learning, adding seeding stats and
+#other stuff that is tournament-specific
+#Freeze the layers in the first level model
+model.trainable = False
+
+m_inp = keras.Input(shape=(tdiff_df.shape[1],))
+mx = layers.Dense(10, activation='relu')(m_inp)
+mx = layers.Dense(10, activation='relu')(mx)
+
+mx = layers.Concatenate()([model.layers[-1].output, mx])
+mx = layers.Dense(n_nodes, activation='relu')(mx)
+mx = layers.Dense(2, activation='softmax')(mx)
+
+m2 = keras.Model(inputs=[model.input, m_inp], outputs=mx)
+m2.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4),
+                  loss=['binary_crossentropy'],
+                  metrics=metrics)
+m2.fit([Xt_t, Xt2_t], yt_t, epochs=200, validation_data=([Xs_t, Xs2_t], ys_t),
+       callbacks=k_calls, verbose=2)
+
+#%%
+
+m2_preds = m2.predict([Xs_t, Xs2_t])
+res_df['AugT_Win%'] = m2_preds[:, 0]
+res_df['AugO_Win%'] = m2_preds[:, 1]
+res_df['AugPredWin'] = [tids[n] if m2_preds[n, 0] < .5 else oids[n] for n in range(Xs_t.shape[0])]
+res_df['auglogloss'] = -(ys_t[:, 0] * np.log(m2_preds[:, 0]) + ys_t[:, 1] * np.log(m2_preds[:, 1]))
 
 
 

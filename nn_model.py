@@ -72,6 +72,7 @@ def shuffle(df):
 tune_hyperparams = True
 scale = StandardScaler()
 scale_st2 = StandardScaler()
+names = st.loadTeamNames()
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 sdf_t.index = sdf.index
@@ -103,8 +104,8 @@ Xs = rescale(Xs, scale)
 #%%
 K.clear_session()
 
-HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([200, 500, 600, 700, 800, 900, 1500]))
-HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4, 5]))
+HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([200, 500, 600, 700, 800, 900]))
+HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4]))
 HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-3, 1e-4, 1e-5, 1e-6]))
 
 METRIC_ACCURACY = 'accuracy'
@@ -116,8 +117,8 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
     )
 
 learn_rate = 1e-4
-num_epochs = 200
-n_layers = 1
+num_epochs = 400
+n_layers = 2
 n_nodes = 800
 logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 k_calls = [tf.keras.callbacks.EarlyStopping(
@@ -130,7 +131,7 @@ k_calls = [tf.keras.callbacks.EarlyStopping(
                     restore_best_weights=True),
             tf.keras.callbacks.ReduceLROnPlateau(
                     monitor="val_loss",
-                    factor=0.8,
+                    factor=0.5,
                     patience=5,
                     verbose=2,
                     mode="auto",
@@ -178,18 +179,16 @@ else:
 
 #%%
 
-tst_df = st_df.merge(adv_tdf.drop(columns=['T_RoundRank']), on=['Season', 'TID'])
-
 #Training sets for tournament data
 tml_df = st.getMatches(tdf, st_df, diff=True).astype(np.float32).dropna()
 tml_df = rescale(tml_df, scale)
 
-tdiff_df = st.getMatches(tdf, tst_df, diff=True).astype(np.float32).dropna().drop(columns=tml_df.columns)
+tdiff_df = st.getMatches(tdf, adv_tdf.drop(columns=['T_RoundRank']), diff=True).astype(np.float32).dropna()
 
 #Get splits for validation data of a single tournament
-Xt_t, _ = shuffle(tml_df.loc(axis=0)[:, :2018, :, :])
+Xt_t, _ = shuffle(tml_df.loc(axis=0)[:, :2017, :, :])
 yt_t = OneHotEncoder(sparse=False).fit_transform(tdf_t[Xt_t.index].values.reshape((-1, 1)))
-Xs_t, _ = shuffle(tml_df.loc(axis=0)[:, 2019, :, :])
+Xs_t, _ = shuffle(tml_df.loc(axis=0)[:, 2018:, :, :])
 ys_t = OneHotEncoder(sparse=False).fit_transform(tdf_t[Xs_t.index].values.reshape((-1, 1)))
 
 #%%
@@ -221,20 +220,54 @@ Xs2_t = rescale(Xs2_t, scale_st2)
 #other stuff that is tournament-specific
 #Freeze the layers in the first level model
 model.trainable = False
+n_augnodes = tdiff_df.shape[1]
 
-m_inp = keras.Input(shape=(tdiff_df.shape[1],))
-mx = layers.Dense(10, activation='relu')(m_inp)
-mx = layers.Dense(10, activation='relu')(mx)
+m_inp = keras.Input(shape=(n_augnodes,))
+mx = layers.Dense(n_augnodes, activation='relu', name='dense_aug1')(m_inp)
+mx = layers.Dense(n_augnodes, activation='relu', name='dense_aug2')(mx)
 
 mx = layers.Concatenate()([model.layers[-1].output, mx])
-mx = layers.Dense(n_nodes, activation='relu')(mx)
-mx = layers.Dense(2, activation='softmax')(mx)
+mx = layers.Dense(n_nodes, activation='relu', name='dense_augconc')(mx)
+mx = layers.Dense(2, activation='softmax', name='aug_output')(mx)
 
 m2 = keras.Model(inputs=[model.input, m_inp], outputs=mx)
 m2.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4),
                   loss=['binary_crossentropy'],
                   metrics=metrics)
-m2.fit([Xt_t, Xt2_t], yt_t, epochs=200, validation_data=([Xs_t, Xs2_t], ys_t),
+
+k_calls = [tf.keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    min_delta=1e-4,
+                    patience=30,
+                    verbose=2,
+                    mode="auto",
+                    baseline=None,
+                    restore_best_weights=True),
+            tf.keras.callbacks.ReduceLROnPlateau(
+                    monitor="val_loss",
+                    factor=0.1,
+                    patience=15,
+                    verbose=2,
+                    mode="auto",
+                    min_delta=1e-4,
+                    cooldown=0,
+                    min_lr=1e-8),
+            TensorBoard(histogram_freq=3, write_images=False,
+                        log_dir=logdir+'-stage2')]
+
+m2.fit([Xt_t, Xt2_t], yt_t, epochs=400, validation_data=([Xs_t, Xs2_t], ys_t),
+       callbacks=k_calls, verbose=2)
+
+#%%
+
+#Fine-tune by unfreezing the earlier model and using a tiiiny learning rate
+k_calls[2] = TensorBoard(histogram_freq=3, write_images=False,
+                        log_dir=logdir+'-finetune')
+m2.trainable = True
+m2.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-10),
+                  loss=['binary_crossentropy'],
+                  metrics=metrics)
+m2.fit([Xt_t, Xt2_t], yt_t, epochs=400, validation_data=([Xs_t, Xs2_t], ys_t),
        callbacks=k_calls, verbose=2)
 
 #%%
@@ -244,6 +277,20 @@ res_df['AugT_Win%'] = m2_preds[:, 0]
 res_df['AugO_Win%'] = m2_preds[:, 1]
 res_df['AugPredWin'] = [tids[n] if m2_preds[n, 0] < .5 else oids[n] for n in range(Xs_t.shape[0])]
 res_df['auglogloss'] = -(ys_t[:, 0] * np.log(m2_preds[:, 0]) + ys_t[:, 1] * np.log(m2_preds[:, 1]))
+aug_acc = sum(res_df['AugPredWin'] == res_df['TrueWin']) / res_df.shape[0]
+
+print('\n\nRuns finished.')
+print('\t\tBase\t\tAug')
+print('Acc:\t\t{:.2f}\t{:.2f}'.format(base_acc * 100, aug_acc * 100))
+print('Loss:\t{:.2f}\t\t{:.2f}'.format(res_df.mean()['logloss'], res_df.mean()['auglogloss']))
+
+print('\nDumbest predictions:\n')
+augdumb = np.sort(res_df['auglogloss'])
+for n in augdumb[-5:]:
+    row = res_df.loc[res_df['auglogloss'] == n]
+    winperc = row['AugT_Win%'].values[0]
+    winperc = winperc if winperc > .5 else 1 - winperc
+    print(names[row['AugPredWin'].values[0]] + ' ({:.2f}) vs '.format(winperc) + names[row['TrueWin'].values[0]] + ' in {}'.format(row.index.get_level_values(1).values[0]))
 
 
 

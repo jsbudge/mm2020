@@ -55,30 +55,7 @@ def getAllAverages(tid):
         t['AvType'] = av
         ret = ret.append(t)
     return ret.set_index(['Season', 'TID', 'AvType'])
-
-def integerOpt(func, rng, npts=5, nits=5):
-    curr_rng = np.linspace(rng[0], rng[1], npts).astype(int)
-    curr_vals = np.array([func(i) for i in curr_rng])
-    curr_min = np.min(curr_vals)
-    m_idx = [n for n in range(npts) if curr_vals[n] == curr_min][0]
-    global_min = curr_min + 0.0; global_val = curr_rng[m_idx]
-    for it in tqdm(range(nits)):
-        if m_idx == 0:
-            curr_rng = np.linspace(curr_rng[0], curr_rng[1], npts).astype(int)
-        elif m_idx == npts-1:
-            curr_rng = np.linspace(curr_rng[-2], curr_rng[-1], npts).astype(int)
-        else:
-            curr_rng = np.linspace(curr_rng[m_idx-1], curr_rng[m_idx+1], npts).astype(int)
-        curr_vals = np.array([func(i) for i in curr_rng])
-        curr_min = np.min(curr_vals)
-        m_idx = [n for n in range(npts) if curr_vals[n] == curr_min][0]
-        if curr_min < global_min:
-            global_min = curr_min
-            global_val = curr_rng[m_idx]
-    return global_val
         
-        
-
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 avs = {}
 m_types = ['relelo', 'gausselo', 'elo', 'rank', 'mest', 'mean', 'recent']
@@ -94,8 +71,7 @@ inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
 #%%
 av_drops = ['T_Rank', 'O_Rank', 'T_Elo', 'O_Elo',
             'T_Win%', 'T_PythWin%', 'T_SoS']
-cong_df = st.merge(inf_df, tsdf, avs['mest'],
-                   avs['recent'])
+cong_df = st.merge(inf_df, tsdf, *[avs[m] for m in m_types])
 tdf_diff = st.getMatches(tdf, cong_df, diff=True)
 
 #%%
@@ -148,40 +124,6 @@ for n in range(20, ntdiff.shape[1] - 1):
                     mx = abs(np.corrcoef(ntdiff[col], scores)[0, 1])
             ntdiff = ntdiff.drop(columns=[col for col in l if col != mcol])
         break
-    
-#%%
-print('Running regressions...')
-Xt, Xs, yt, ys = train_test_split(ntdiff, scores)
-rfr = RandomForestRegressor(n_estimators=500)
-bayr = sk_lm.BayesianRidge()
-
-#An attempt to create a team-average relative quality stat
-rfr.fit(Xt, yt)
-bayr.fit(Xt, yt)
-res_df = pd.DataFrame()
-res_df['RFR'] = rfr.predict(Xs)
-res_df['BAY'] = bayr.predict(Xs)
-res_df['true'] = ys.values
-res_df.index = Xs.index
-
-#%%
-#An attempt to get a tournament ranking
-allT = pd.DataFrame()
-for seas in list(set(ntdiff.index.get_level_values(1))):
-    allT = allT.append(st.getAllMatches(cong_df[ntdiff.columns], seas, True))
-met_df = pd.DataFrame()
-
-met_df['RFR'] = rfr.predict(allT)
-met_df['BAY'] = bayr.predict(allT)
-met_df.index = allT.index
-mdf_group = met_df.groupby(['Season', 'TID'])
-metric = mdf_group.sum() / 68
-metric = metric.merge(mdf_group.apply(lambda x: np.sum(x > 0)), on=['Season', 'TID'])
-metric = metric.merge(avs['recent'][['T_Rank', 'T_Elo']], on=['Season', 'TID'])
-metric = metric.join(adv_tdf[['T_Seed', 'T_RoundRank']], on=['Season', 'TID'])
-
-metric['GeoSCR'] = gmean(metric[['RFR_y', 'BAY_y']].values, axis=1)
-metric['MeanSCR'] = metric[['RFR_x', 'BAY_x']].mean(axis=1)
 
 #%%
 #Save everything out to a file so we can move between scripts easily

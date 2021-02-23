@@ -204,21 +204,44 @@ Params:
 Returns:
     wdf: DataFrame - augmented frame.
 '''
-def getTourneyStats(tdf, df):
+def getTourneyStats(tdf, df, av_strat='mean'):
     wdf = pd.DataFrame(index=tdf.groupby(['Season', 'TID']).mean().index)
     df = df.sort_values('GameID')
     tdf = tdf.sort_values('GameID')
+    av_df = getSeasonalStats(df, strat=av_strat)
     seeds = pd.read_csv('./data/MNCAATourneySeeds.csv')
+    conf = pd.read_csv('./data/MTeamConferences.csv').rename(columns={'TeamID': 'TID'})
+    conf['Conf_MeanElo'] = -1; conf['Conf_MeanRank'] = -1
+    conf['Conf_MaxRank'] = -1; conf['Conf_MaxElo'] = -1
+    for idx, grp in conf.groupby(['Season', 'ConfAbbrev']):
+        if idx[0] in av_df.index.get_level_values(0):
+            conf.loc[np.logical_and(conf['Season'] == idx[0],
+                                    conf['ConfAbbrev'] == idx[1]), 
+                     ['Conf_MeanElo',
+                      'Conf_MeanRank']] = av_df.loc(axis=0)[idx[0], 
+                                                     grp['TID']][['T_Elo',
+                                                                     'T_Rank']].mean().values
+            conf.loc[np.logical_and(conf['Season'] == idx[0],
+                                    conf['ConfAbbrev'] == idx[1]), 
+                     'Conf_MaxElo'] = av_df.loc(axis=0)[idx[0], 
+                                                     grp['TID']]['T_Elo'].max()
+            conf.loc[np.logical_and(conf['Season'] == idx[0],
+                                    conf['ConfAbbrev'] == idx[1]), 
+                     'Conf_MaxRank'] = av_df.loc(axis=0)[idx[0], 
+                                                     grp['TID']]['T_Rank'].min()
+    conf = conf.drop(columns=['ConfAbbrev'])
     for idx, team in tdf.groupby(['Season', 'TID']):
         wdf.loc[idx, 'T_Momentum'] = np.mean(np.gradient(df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values)[-3:])
         wdf.loc[idx, 'T_RankNoise'] = np.std(df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values)
         sd = seeds.loc[np.logical_and(seeds['Season'] == idx[0],
                                       seeds['TeamID'] == idx[1]), 'Seed'].values[0][1:]
+        playin = 1 if len(sd) > 2 else 0
         sd = int(sd[:-1]) if len(sd) > 2 else int(sd)
         wdf.loc[idx, 'T_Seed'] = sd
         wdf.loc[idx, 'T_FinalElo'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values[-1]
         wdf.loc[idx, 'T_FinalRank'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values[-1]
-        wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score'])
+        wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
+    wdf = wdf.merge(conf, on=['Season', 'TID']).set_index(['Season', 'TID'])
     return wdf
 
 '''
@@ -728,11 +751,14 @@ def getAllMatches(team_feats, season, diff=False):
 
 def merge(*args):
     df = None
+    n_idents = 1
     for d in args:
         if df is None:
             df = d
         else:
-            df = df.merge(d, left_index=True, right_index=True)
+            df = df.merge(d, left_index=True, right_index=True, 
+                          suffixes=['_{}'.format(n_idents), '_{}'.format(n_idents+1)])
+        n_idents += 2
     return df
             
 

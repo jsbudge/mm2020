@@ -104,9 +104,9 @@ Xs = rescale(Xs, scale)
 #%%
 K.clear_session()
 
-HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([200, 500, 600, 700, 800, 900]))
+HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([200, 500, 800, 1000]))
 HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4]))
-HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-3, 1e-4, 1e-5, 1e-6]))
+HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-4, 1e-5]))
 
 METRIC_ACCURACY = 'accuracy'
 
@@ -123,7 +123,7 @@ n_nodes = 800
 logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
-                    min_delta=1e-4,
+                    min_delta=1e-5,
                     patience=20,
                     verbose=2,
                     mode="auto",
@@ -131,7 +131,7 @@ k_calls = [tf.keras.callbacks.EarlyStopping(
                     restore_best_weights=True),
             tf.keras.callbacks.ReduceLROnPlateau(
                     monitor="val_loss",
-                    factor=0.5,
+                    factor=0.8,
                     patience=5,
                     verbose=2,
                     mode="auto",
@@ -223,11 +223,17 @@ model.trainable = False
 n_augnodes = tdiff_df.shape[1]
 
 m_inp = keras.Input(shape=(n_augnodes,))
-mx = layers.Dense(n_augnodes, activation='relu', name='dense_aug1')(m_inp)
-mx = layers.Dense(n_augnodes, activation='relu', name='dense_aug2')(mx)
+mx = layers.Dense(n_augnodes, activation='relu', name='dense_aug1',
+                           kernel_regularizer=regularizers.l2(1e-1),
+                           bias_regularizer=regularizers.l2(1e-1))(m_inp)
+mx = layers.Dense(n_augnodes, activation='relu', name='dense_aug2',
+                           kernel_regularizer=regularizers.l2(1e-1),
+                           bias_regularizer=regularizers.l2(1e-1))(mx)
 
 mx = layers.Concatenate()([model.layers[-1].output, mx])
-mx = layers.Dense(n_nodes, activation='relu', name='dense_augconc')(mx)
+mx = layers.Dense(n_nodes, activation='relu', name='dense_augconc',
+                           kernel_regularizer=regularizers.l2(1e-1),
+                           bias_regularizer=regularizers.l2(1e-1))(mx)
 mx = layers.Dense(2, activation='softmax', name='aug_output')(mx)
 
 m2 = keras.Model(inputs=[model.input, m_inp], outputs=mx)
@@ -264,7 +270,7 @@ m2.fit([Xt_t, Xt2_t], yt_t, epochs=400, validation_data=([Xs_t, Xs2_t], ys_t),
 k_calls[2] = TensorBoard(histogram_freq=3, write_images=False,
                         log_dir=logdir+'-finetune')
 m2.trainable = True
-m2.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-10),
+m2.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-8),
                   loss=['binary_crossentropy'],
                   metrics=metrics)
 m2.fit([Xt_t, Xt2_t], yt_t, epochs=400, validation_data=([Xs_t, Xs2_t], ys_t),
@@ -292,5 +298,6 @@ for n in augdumb[-5:]:
     winperc = winperc if winperc > .5 else 1 - winperc
     print(names[row['AugPredWin'].values[0]] + ' ({:.2f}) vs '.format(winperc) + names[row['TrueWin'].values[0]] + ' in {}'.format(row.index.get_level_values(1).values[0]))
 
+#%%
 
 

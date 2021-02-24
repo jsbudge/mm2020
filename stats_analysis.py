@@ -39,8 +39,11 @@ def getPairwiseMI(A, adj=False):
     matMI = pd.DataFrame(index=A.columns, columns=A.columns)
     for ix in A.columns:
         for jx in A.columns:
-            matMI.loc[ix, jx] = calc_MI(A[ix].values, 
-                                        A[jx].values, [be[ix], be[jx]])
+            if np.isnan(matMI.loc[ix, jx]):
+                val = calc_MI(A[ix].values, 
+                              A[jx].values, [be[ix], be[jx]])
+                matMI.loc[ix, jx] = val
+                matMI.loc[jx, ix] = val
     if adj:
         kx = np.linalg.pinv(np.sqrt(np.diag(np.diag(matMI.astype(float)))))
         return pd.DataFrame(index=A.columns,
@@ -62,15 +65,12 @@ m_types = ['relelo', 'gausselo', 'elo', 'rank', 'mest', 'mean', 'recent']
 for m in tqdm(m_types):
     avs[m] = st.getSeasonalStats(sdf, strat=m)
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
-adv_tdf = st.getTourneyStats(tdf, sdf)
 pdf = ev.getTeamRosters()
 tsdf = pd.read_csv('./data/PlayerAnalysisData.csv').set_index(['Season', 'TID'])
 print('Scaling for influence...')
 inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
 
 #%%
-av_drops = ['T_Rank', 'O_Rank', 'T_Elo', 'O_Elo',
-            'T_Win%', 'T_PythWin%', 'T_SoS']
 cong_df = st.merge(inf_df, tsdf, *[avs[m] for m in m_types])
 tdf_diff = st.getMatches(tdf, cong_df, diff=True)
 
@@ -87,7 +87,7 @@ for s, grp in ntdiff.groupby(['Season']):
 print('Getting Information Stats...')
 mi_df = getPairwiseMI(ntdiff, True)
 corr_df = abs(ntdiff.corr())
-sc_df = np.sqrt(mi_df**2 + corr_df**2) / np.sqrt(2)
+sc_df = (mi_df + corr_df) / 2
 
 def overallScore(n_cl, sc_df, sel_func=np.mean):
     fa = FeatureAgglomeration(n_clusters=n_cl).fit(ntdiff)

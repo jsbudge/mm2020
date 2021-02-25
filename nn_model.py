@@ -105,8 +105,8 @@ Xs = rescale(Xs, scale)
 K.clear_session()
 
 HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([200, 500, 800, 1000]))
-HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2, 3, 4]))
-HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-4, 1e-5]))
+HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1, 2]))
+HP_LR = hp.HParam('learning_rate', hp.Discrete([1e-3, 1e-4, 5e-5, 1e-5]))
 
 METRIC_ACCURACY = 'accuracy'
 
@@ -117,7 +117,7 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
     )
 
 learn_rate = 1e-4
-num_epochs = 400
+num_epochs = 800
 n_layers = 2
 n_nodes = 800
 logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -131,7 +131,7 @@ k_calls = [tf.keras.callbacks.EarlyStopping(
                     restore_best_weights=True),
             tf.keras.callbacks.ReduceLROnPlateau(
                     monitor="val_loss",
-                    factor=0.8,
+                    factor=0.5,
                     patience=5,
                     verbose=2,
                     mode="auto",

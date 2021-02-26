@@ -17,7 +17,9 @@ from tqdm import tqdm
 import seaborn as sns
 import eventlib as ev
 from scipy.stats import multivariate_normal as mvn
-from scipy.stats import iqr, chi2_contingency
+from scipy.stats import iqr, chi2_contingency, rayleigh
+from scipy.optimize import curve_fit
+from scipy.special import erf
 from scipy.stats.mstats import gmean, hmean
 from scipy.interpolate import CubicSpline
 from sklearn.metrics import mutual_info_score, log_loss
@@ -69,6 +71,19 @@ pdf = ev.getTeamRosters()
 tsdf = pd.read_csv('./data/PlayerAnalysisData.csv').set_index(['Season', 'TID'])
 print('Scaling for influence...')
 inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
+
+
+#%%
+#Add in some ideas based on expected values
+elodiff = sdf['T_Elo'] - sdf['O_Elo']
+expelo = 1 / (1 + 10**(elodiff / 400))
+scorediff = sdf['T_Score'] - sdf['O_Score']
+eloscoredf = st.merge(pd.DataFrame(elodiff), pd.DataFrame(expelo))
+
+elofit, _ = curve_fit(lambda x, a, b: a * x + b, elodiff, scorediff)
+
+exp_score = scorediff - (elodiff * elofit[0] + elofit[1])
+inf_df['ExpScDiff'] = exp_score.groupby(['Season', 'TID']).mean()
 
 #%%
 cong_df = st.merge(inf_df, tsdf, *[avs[m] for m in m_types])

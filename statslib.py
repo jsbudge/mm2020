@@ -27,6 +27,23 @@ id_cols = ['GameID', 'Season', 'DayNum', 'TID', 'OID']
 
 
 '''
+gauss
+Good ol' gaussian probability density function.
+
+Params:
+    x: float - value you want the PDF of.
+    a: float - amplitude of gaussian.
+    x0: float - mean of gaussian.
+    sigma: float - standard deviation of gaussian.
+    
+Returns:
+    float - value of gaussian PDF given the above parameters.
+'''
+def gauss(x,a,x0,sigma):
+    return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+
+'''
 getFiles
 Creates a dict of names for easy file access. Does this in an operating-system
 agnostic way so we can work in Linux and Windows.
@@ -378,6 +395,7 @@ def getSeasonalStats(df, strat='rank', seasonal_only=False):
     wdf['T_Win%'] = dfapp.apply(lambda x: sum(x['T_Score'] > x['O_Score']) / x.shape[0])
     wdf['T_PythWin%'] = dfapp.apply(lambda grp: sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91))
     wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(400-grp['O_Rank'], weights=grp['O_Elo']) / 4)
+    wdf['T_ExpWin%'] = dfapp.apply(lambda x: sum(x['T_Elo'] > x['O_Elo']) / x.shape[0])
     if seasonal_only:
         wdf = wdf[['T_Win%', 'T_PythWin%', 'T_SoS']]
     return wdf

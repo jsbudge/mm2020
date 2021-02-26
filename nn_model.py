@@ -69,7 +69,7 @@ def shuffle(df):
 
 #%%
 
-tune_hyperparams = True
+tune_hyperparams = False
 scale = StandardScaler()
 scale_st2 = StandardScaler()
 names = st.loadTeamNames()
@@ -118,8 +118,8 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
 
 learn_rate = 1e-4
 num_epochs = 800
-n_layers = 2
-n_nodes = 800
+n_layers = 1
+n_nodes = 200
 logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
@@ -261,7 +261,7 @@ k_calls = [tf.keras.callbacks.EarlyStopping(
             TensorBoard(histogram_freq=3, write_images=False,
                         log_dir=logdir+'-stage2')]
 
-m2.fit([Xt_t, Xt2_t], yt_t, epochs=400, validation_data=([Xs_t, Xs2_t], ys_t),
+m2.fit([Xt_t, Xt2_t], yt_t, epochs=num_epochs, validation_data=([Xs_t, Xs2_t], ys_t),
        callbacks=k_calls, verbose=2)
 
 #%%
@@ -273,7 +273,7 @@ m2.trainable = True
 m2.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-8),
                   loss=['binary_crossentropy'],
                   metrics=metrics)
-m2.fit([Xt_t, Xt2_t], yt_t, epochs=400, validation_data=([Xs_t, Xs2_t], ys_t),
+m2.fit([Xt_t, Xt2_t], yt_t, epochs=num_epochs, validation_data=([Xs_t, Xs2_t], ys_t),
        callbacks=k_calls, verbose=2)
 
 #%%

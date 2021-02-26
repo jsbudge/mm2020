@@ -33,19 +33,11 @@ from tensorflow.keras import backend as K
 from datetime import datetime
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
-savdf = st.getSeasonalStats(sdf, strat='relelo')
+sdf_t.index = sdf.index
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
-adv_tdf = st.getTourneyStats(tdf, sdf) 
-pdf = ev.getTeamRosters()
-tsdf = pd.read_csv('./data/PlayerAnalysisData.csv').set_index(['Season', 'TID'])
-scale_df = sdf.groupby(['Season', 'TID']).apply(lambda x: (x - x.mean()) / x.std())
-
-#%%
-inf_df = scale_df.groupby(['Season', 'OID']).mean()
-inf_df = inf_df.drop(columns=[col for col in inf_df.columns if 'O_' in col])
-inf_df = inf_df.reset_index().rename(columns={'OID': 'TID'}).set_index(['Season', 'TID'])
-inf_df = inf_df.drop(columns=['DayNum', 'T_Rank', 'T_Elo'])
-inf_df.columns = [col + 'Inf' for col in inf_df.columns]
+adv_tdf = st.getTourneyStats(tdf, sdf)
+st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
+av_df = st.getSeasonalStats(sdf, strat='relelo')
 
 #%%
 total_df = st.merge(savdf, inf_df)

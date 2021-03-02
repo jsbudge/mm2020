@@ -11,7 +11,6 @@ from tqdm import tqdm
 from scipy.linalg import solve
 from scipy.interpolate import CubicSpline
 from scipy.stats import hmean, iqr
-import statsmodels.api as sm
 from sklearn.preprocessing import RobustScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
@@ -332,7 +331,10 @@ Returns:
 '''
 def getInfluenceStats(df, save=True, recalc=False, norm=False):
     if not recalc:
-        return pd.read_csv('./data/influence_stats.csv')
+        try:
+            return pd.read_csv('./data/influence_stats.csv')
+        except:
+            print('File not found. Re-calculating.')
     scale_df = df.groupby(['Season', 'TID']).apply(lambda x: (x - x.mean()) / x.std())
     scale_std = df.groupby(['Season']).std()
     inf_df = scale_df.groupby(['Season', 'OID']).mean()
@@ -383,7 +385,7 @@ def getSeasonalStats(df, strat='rank', seasonal_only=False):
         elif strat == 'relelo':
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights= .1 / abs(x['T_Elo'] - x['O_Elo']).values**(1/4)))
         elif strat == 'gausselo':
-            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=1 / (100 * np.sqrt(2 * np.pi)) * np.exp(-.5 * ((x['T_Elo'] - x['O_Elo']).values / 100)**2)))
+            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=gauss(x['T_Elo'], 1, x['O_Elo'].mean(), 100)))
         elif strat == 'mest':
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights=1 / (x.std(axis=0).values * np.sqrt(2 * np.pi)) * np.exp(-.5 * ((x - x.median(axis=0)).values / x.std(axis=0).values)**2)))
         elif strat == 'recent':
@@ -397,7 +399,7 @@ def getSeasonalStats(df, strat='rank', seasonal_only=False):
     wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(400-grp['O_Rank'], weights=grp['O_Elo']) / 4)
     wdf['T_ExpWin%'] = dfapp.apply(lambda x: sum(x['T_Elo'] > x['O_Elo']) / x.shape[0])
     if seasonal_only:
-        wdf = wdf[['T_Win%', 'T_PythWin%', 'T_SoS']]
+        wdf = wdf[['T_Win%', 'T_PythWin%', 'T_SoS', 'T_ExpWin%']]
     return wdf
 
 '''

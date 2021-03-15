@@ -18,15 +18,17 @@ import eventlib as ev
 import numpy as np
 from difflib import get_close_matches
 
+add_to_existing = True
 pdf = ev.getTeamRosters()
 #Grab the data from sportsreference
 seas_map = {'2011-12': 2012,
             '2012-13': 2013, '2013-14': 2014,
             '2014-15': 2015, '2015-16': 2016,
                                     '2016-17': 2017, '2017-18': 2018,
-                                    '2018-19': 2019, '2019-20': 2020}
+                                    '2018-19': 2019, '2019-20': 2020,
+                                    '2020-21': 2021, '2021-2022': 2022}
 play_df = pd.DataFrame()
-for season in [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020]:
+for season in [2021, 2022]:
     tm = Teams(season)
     for team in tqdm(tm):
         ros = team.roster
@@ -166,5 +168,8 @@ sdf.columns = ['Ast%', 'Ast', 'Blk%', 'Blk', 'BPM', 'DBPM', 'DR%', 'DR', 'DWS',
                'PtsProd', 'Pos', 'Stl%', 'Stl', '3/2Rate', 'FGA3', 'FG3%', 'FGM3',
                'R%', 'R', 'TS%', 'TO%', 'TO', 'FGA2', 'FG2%', 'FGM2', 'Usage%',
                'Weight', 'WS', 'WSPer40']
-
-sdf.to_csv('./data/InternetPlayerData.csv')
+if add_to_existing:
+    ipd = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
+    sdf = sdf.append(ipd)
+else:
+    sdf.to_csv('./data/InternetPlayerData.csv')

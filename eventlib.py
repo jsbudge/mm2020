@@ -460,7 +460,7 @@ def splitStats(df, sdf, add_stats=[], minbins=None):
         else:
             cats = minbins
     df['MinPerc'] = np.digitize(df['MinsPerGame'], cats)
-    mdf = df.merge(sdf[['T_SoS', 'T_Poss']], on=['Season', 'TID'], right_index=True)
+    mdf = df.join(sdf[['T_SoS', 'T_Poss']], on=['Season', 'TID'])
     adv_df = df[['Ast%', 'Blk%', 'BPM', 'DBPM', 'DR%', 'DWS', 'eFG%', 'FG%', 
                  'FT/A', 'FT%', 'OBPM', 'OR%', 'OWS', 'PER', 'PtsProd',
                  'Stl%', '3/2Rate', 'FG3%', 'R%', 'TS%', 'TO%', 'FG2%', 'Usage%',

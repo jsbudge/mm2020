@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import statslib as st
 from tqdm import tqdm
+from tourney import Bracket, kerasWrapper
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.ensemble import RandomForestClassifier
@@ -23,17 +24,33 @@ def rescale(df, scaler):
                         data=scaler.transform(df))
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
-sdf_t.index = sdf.index
+#sdf_t.index = sdf.index
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
 adv_tdf = st.getTourneyStats(tdf, sdf)
-av_df = st.getSeasonalStats(sdf, strat='gausselo')
+#av_df = st.getSeasonalStats(sdf, strat='gausselo')
+st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
 scale = StandardScaler()
+names = st.loadTeamNames()
 #%%
 
-avt_df = st.getMatches(tdf, av_df, diff=True).astype(np.float32).dropna()
+avt_df = st.getMatches(tdf, st_df, diff=True).astype(np.float32).dropna()
 advt_df = st.getMatches(tdf, adv_tdf, diff=True).astype(np.float32).dropna()
-ml_df = st.merge(avt_df, advt_df).drop(columns=['T_RoundRank'])
+ml_df = st.merge(avt_df, advt_df)
 target = OneHotEncoder(sparse=False).fit_transform(tdf_t[ml_df.index].values.reshape((-1, 1)))
+
+subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
+sub_df = pd.DataFrame(columns=['GameID'], data=np.arange(subs.shape[0]),
+                      dtype=int)
+for idx, row in subs.iterrows():
+    tmp = row['ID'].split('_')
+    sub_df.loc[idx, ['Season', 'TID', 'OID']] = [int(t) for t in tmp]
+s2_df = sub_df.copy()
+s2_df['TID'] = sub_df['OID']
+s2_df['OID'] = sub_df['TID']
+sub_df = sub_df.set_index(['GameID', 'Season', 'TID', 'OID'])
+s2_df = s2_df.set_index(['GameID', 'Season', 'TID', 'OID'])
+sub_df['Pivot'] = 1; s2_df['Pivot'] = 1
+pred_tdf = st.getTourneyStats(sub_df.append(s2_df), sdf)
 
 #%%
 
@@ -42,30 +59,37 @@ scale.fit(Xt)
 Xt = rescale(Xt, scale)
 Xs = rescale(Xs, scale)
 
-for n_class in [50, 200, 750, 1400, 2000]:
+for n_class in [50]:
     rfc = RandomForestClassifier(n_estimators=n_class)
+    rfc.fit(Xt, yt)
     
-    rfeats = RFECV(rfc, cv=KFold(shuffle=True)).fit(Xt, yt)
-    
-    rfc.fit(Xt[Xt.columns[rfeats.support_]], yt)
-    spreds = np.array(rfc.predict_proba(Xs[Xt.columns[rfeats.support_]]))[0, :, :]
-    
-    #prep submissions
-    subs = pd.read_csv('./data/MSampleSubmissionStage1.csv')
-    preds = pd.DataFrame(index=subs.index, columns=['GameID', 'Season', 'TID', 'OID'])
-    for idx, row in subs.iterrows():
-        tids = row['ID'].split('_')
-        preds.loc[idx, ['GameID', 'Season', 'TID', 'OID']] = \
-            [idx, int(tids[0]), int(tids[1]), int(tids[2])]
-            
-    preds = preds.set_index(['GameID', 'Season', 'TID', 'OID'])
-    pred_data = rescale(st.merge(st.getMatches(preds, av_df, diff=True),
-                         st.getMatches(preds, adv_tdf, diff=True)).drop(columns=['T_RoundRank']),
-                        scale)
-    pred_data = pred_data[Xt.columns[rfeats.support_]]
-    
-    subs['Pred'] = rfc.predict_proba(pred_data)[0]
-    subs.to_csv('sub_{}.csv'.format(n_class), index=False)
+#%%
+#Now we make predictions for the tournament of the year
+pred_1 = st.getMatches(sub_df, st.merge(st_df, pred_tdf), diff=True).astype(np.float32)
+model = kerasWrapper(rfc)
+
+sub_preds = model.predict(rescale(pred_1, scale))
+tids = sub_df.index.get_level_values(2)
+oids = sub_df.index.get_level_values(3)
+sub_df['T_Win%'] = sub_preds[:, 0]
+sub_df['O_Win%'] = sub_preds[:, 1]
+sub_df['PredWin'] = [names[tids[n]] if sub_preds[n, 0] > .5 else names[oids[n]] for n in range(sub_df.shape[0])]
+
+b2021 = Bracket(2021)
+b2021.run(model, pred_1, scaling=scale)
+#b2021.printTree('./submissions/tree' + runID + '.txt')
+
+subs['Pred'] = sub_df['T_Win%'].values
+#subs.to_csv('./submissions/sub' + runID + '.csv', index=False)
+
+#%%
+#Double checking on tournament scores in our validation years
+print('\nScores for validation years:')
+print('\t\tESPN\t\tLogLoss\t\tAcc.')
+for season in [2018, 2019]:
+    br = Bracket(season, True)
+    br.run(model, st.merge(st_df, adv_tdf), scale)
+    print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}'.format(season, br.espn_score, br.loss, br.accuracy))
 
 
 

@@ -92,7 +92,7 @@ tdf_diff = st.getMatches(tdf, cong_df, diff=True)
 #%%
 ntdiff = tdf_diff.dropna()
 ntdiff = ntdiff.drop(columns=['T_RankInf',
-                              'T_EloInf', 'DayNumInf'])
+                              'T_EloInf'])
 #ntdiff = ntdiff.loc[ntdiff.index.get_level_values(0).duplicated(keep='last')]
 scores = tdf.loc[ntdiff.index, 'T_Score'] - tdf.loc[ntdiff.index, 'O_Score']
 for s, grp in ntdiff.groupby(['Season']):

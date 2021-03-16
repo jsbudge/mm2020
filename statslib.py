@@ -256,7 +256,7 @@ def getTourneyStats(tdf, df, av_strat='mean'):
         wdf.loc[idx, 'T_Seed'] = sd
         wdf.loc[idx, 'T_FinalElo'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values[-1]
         wdf.loc[idx, 'T_FinalRank'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values[-1]
-        wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
+        #wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
     wdf = wdf.merge(conf, on=['Season', 'TID']).set_index(['Season', 'TID'])
     return wdf
 
@@ -335,8 +335,12 @@ def getInfluenceStats(df, save=True, recalc=False, norm=False):
             return pd.read_csv('./data/influence_stats.csv')
         except:
             print('File not found. Re-calculating.')
-    scale_df = df.groupby(['Season', 'TID']).apply(lambda x: (x - x.mean()) / x.std())
-    scale_std = df.groupby(['Season']).std()
+    if 'DayNum' in df.columns:
+        tdf = df.drop(columns=['DayNum'])
+    else:
+        tdf = df
+    scale_df = tdf.groupby(['Season', 'TID']).apply(lambda x: (x - x.mean()) / x.std())
+    scale_std = tdf.groupby(['Season']).std()
     inf_df = scale_df.groupby(['Season', 'OID']).mean()
     for idx, grp in inf_df.groupby(['Season']):
         inf_df.loc[grp.index] = grp * scale_std.loc[idx]
@@ -689,7 +693,7 @@ def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False,
     ts = addElos(ts)
     ts = ts.set_index(['GameID', 'Season', 'TID', 'OID'])
     tsdays = ts['DayNum']
-    ty = ts['T_Score'] > ts['O_Score'] - 0
+    ty = ts['T_Score'] < ts['O_Score'] - 0
     if not noinfluence:
         ts = joinFrame(ts, getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
         ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])
@@ -714,7 +718,7 @@ Returns:
 '''
 def arrangeTourneyGames(noraw=False):
     tts = getGames(tourney=True).drop(columns=['NumOT', 'GLoc'])
-    tty = tts['T_Score'] > tts['O_Score'] - 0
+    tty = tts['T_Score'] < tts['O_Score'] - 0
     if noraw:
         tts = joinFrame(tts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
                            getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])

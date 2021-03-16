@@ -28,6 +28,7 @@ from keras.callbacks import TensorBoard
 from tensorflow.keras import backend as K
 from tensorboard.plugins.hparams import api as hp
 from datetime import datetime
+from tourney import Bracket
 plt.close('all')
 
 '''
@@ -117,10 +118,11 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
     )
 
 learn_rate = 1e-4
-num_epochs = 800
+num_epochs = 600
 n_layers = 1
-n_nodes = 200
-logdir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+n_nodes = 100
+runID = datetime.now().strftime("%Y%m%d-%H%M%S")
+logdir = "logs/fit/" + runID
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
                     min_delta=1e-5,
@@ -183,7 +185,7 @@ else:
 tml_df = st.getMatches(tdf, st_df, diff=True).astype(np.float32).dropna()
 tml_df = rescale(tml_df, scale)
 
-tdiff_df = st.getMatches(tdf, adv_tdf.drop(columns=['T_RoundRank']), diff=True).astype(np.float32).dropna()
+tdiff_df = st.getMatches(tdf, adv_tdf, diff=True).astype(np.float32).dropna()
 
 #Get splits for validation data of a single tournament
 Xt_t, _ = shuffle(tml_df.loc(axis=0)[:, :2017, :, :])
@@ -200,7 +202,7 @@ scores = tdf.loc[Xs_t.index, 'T_Score'] - tdf.loc[Xs_t.index, 'O_Score']
 base_preds = model.predict(Xs_t)
 res_df['T_Win%'] = base_preds[:, 0]
 res_df['O_Win%'] = base_preds[:, 1]
-res_df['PredWin'] = [tids[n] if base_preds[n, 0] < .5 else oids[n] for n in range(Xs_t.shape[0])]
+res_df['PredWin'] = [tids[n] if base_preds[n, 0] > .5 else oids[n] for n in range(Xs_t.shape[0])]
 res_df['TrueWin'] = [tids[n] if scores.iloc[n] > 0 else oids[n] for n in range(Xs_t.shape[0])]
 res_df['logloss'] = -(ys_t[:, 0] * np.log(base_preds[:, 0]) + ys_t[:, 1] * np.log(base_preds[:, 1]))
 base_acc = sum(res_df['PredWin'] == res_df['TrueWin']) / res_df.shape[0]
@@ -281,7 +283,7 @@ m2.fit([Xt_t, Xt2_t], yt_t, epochs=num_epochs, validation_data=([Xs_t, Xs2_t], y
 m2_preds = m2.predict([Xs_t, Xs2_t])
 res_df['AugT_Win%'] = m2_preds[:, 0]
 res_df['AugO_Win%'] = m2_preds[:, 1]
-res_df['AugPredWin'] = [tids[n] if m2_preds[n, 0] < .5 else oids[n] for n in range(Xs_t.shape[0])]
+res_df['AugPredWin'] = [tids[n] if m2_preds[n, 0] > .5 else oids[n] for n in range(Xs_t.shape[0])]
 res_df['auglogloss'] = -(ys_t[:, 0] * np.log(m2_preds[:, 0]) + ys_t[:, 1] * np.log(m2_preds[:, 1]))
 aug_acc = sum(res_df['AugPredWin'] == res_df['TrueWin']) / res_df.shape[0]
 
@@ -299,5 +301,44 @@ for n in augdumb[-5:]:
     print(names[row['AugPredWin'].values[0]] + ' ({:.2f}) vs '.format(winperc) + names[row['TrueWin'].values[0]] + ' in {}'.format(row.index.get_level_values(1).values[0]))
 
 #%%
+#Now we make predictions for the tournament of the year
+subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
+sub_df = pd.DataFrame(columns=['GameID'], data=np.arange(subs.shape[0]),
+                      dtype=int)
+for idx, row in subs.iterrows():
+    tmp = row['ID'].split('_')
+    sub_df.loc[idx, ['Season', 'TID', 'OID']] = [int(t) for t in tmp]
+s2_df = sub_df.copy()
+s2_df['TID'] = sub_df['OID']
+s2_df['OID'] = sub_df['TID']
+sub_df = sub_df.set_index(['GameID', 'Season', 'TID', 'OID'])
+s2_df = s2_df.set_index(['GameID', 'Season', 'TID', 'OID'])
+sub_df['Pivot'] = 1; s2_df['Pivot'] = 1
+pred_tdf = st.getTourneyStats(sub_df.append(s2_df), sdf)
+pred_1 = rescale(st.getMatches(sub_df, st_df, diff=True).astype(np.float32), scale)
+pred_2 = rescale(st.getMatches(sub_df, pred_tdf, diff=True).astype(np.float32), scale_st2)
 
+sub_preds = m2.predict([pred_1, pred_2])
+tids = sub_df.index.get_level_values(2)
+oids = sub_df.index.get_level_values(3)
+sub_df['T_Win%'] = sub_preds[:, 0]
+sub_df['O_Win%'] = sub_preds[:, 1]
+sub_df['PredWin'] = [names[tids[n]] if sub_preds[n, 0] > .5 else names[oids[n]] for n in range(sub_df.shape[0])]
+
+b2021 = Bracket(2021)
+b2021.run(m2, st_df, pred_tdf, [scale, scale_st2])
+b2021.printTree('./submissions/tree' + runID + '.txt')
+
+subs['Pred'] = sub_df['T_Win%'].values
+subs.to_csv('./submissions/sub' + runID + '.csv', index=False)
+
+#%%
+#Double checking on tournament scores in our validation years
+print('\nScores for validation years:')
+print('\t\tESPN\t\tLogLoss\t\tAcc.')
+for season in [2018, 2019]:
+    br = Bracket(season, True)
+    br.run(m2, st_df, adv_tdf, [scale, scale_st2])
+    print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}'.format(season, br.espn_score, br.loss, br.accuracy))
+    
 

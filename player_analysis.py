@@ -56,7 +56,6 @@ n_player_types = 5
 minbins = np.array([0, 5.55, 15.88, 30, 44])
 av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
 av_df = av_df.loc[np.logical_not(av_df.index.duplicated())]
-av_df = av_df.loc(axis=0)[:2019, :, :]
 adv_df, phys_df, score_df, base_df = ev.splitStats(av_df, savdf, add_stats=['poss'],
                                                    minbins = minbins)
 
@@ -75,8 +74,8 @@ merge_df = pd.DataFrame(data=stat_cats.fit_transform(ov_perc.drop(columns=['SoS'
                         index=ov_perc.index)
 for idx, grp in merge_df.groupby(['Season']):
     merge_df.loc[grp.index] = (grp - grp.mean()) / grp.std()
-m_cov = merge_df.merge(savdf[['T_OffRat', 'T_DefRat']], on=['Season', 
-                                    'TID'], right_index=True).cov()
+m_cov = merge_df.join(savdf[['T_OffRat', 'T_DefRat']], on=['Season', 
+                                    'TID']).cov()
 cov_cols = [col for col in m_cov.columns if 'T_' not in col]
 shift_cons = m_cov.loc['T_OffRat', cov_cols].values
 off_cons = m_cov.loc['T_OffRat', cov_cols].values
@@ -145,30 +144,6 @@ for idx, grp in adv_df.groupby(['Season', 'TID']):
                                                                             weights=phys_df.loc[grp.index, 'MinsPerGame'].values)]
 if save_to_csv:
     ts_df.to_csv('./data/PlayerAnalysisData.csv')
-    
-#%%
-
-#Lineup experimentation
-g_ev, line, sec_df, l_df = ev.getSingleGameLineups(2545, season)
-
-lin1 = pd.DataFrame(columns=adv_df.columns)
-lin2 = pd.DataFrame(columns=adv_df.columns)
-for l in line[0]:
-    try:
-        lin1.loc[l] = adv_df.loc(axis=0)[season, line[0][l]].sum()
-    except:
-        print('Lineup contains non-impact player.')
-for col in lin1.columns:
-    if 'Per18' not in col:
-        lin1[col] = lin1[col] / 5
-for l in line[1]:
-    try:
-        lin2.loc[l] = adv_df.loc(axis=0)[season, line[1][l]].sum()
-    except:
-        print('Lineup contains non-impact player.')
-for col in lin2.columns:
-    if 'Per18' not in col:
-        lin2[col] = lin2[col] / 5
         
 #%%
 #Some example players from each segment of MinPerc

@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import statslib as st
 import framelib as fl
+import internetlib as il
 
 df = st.getGames(split=False)
 print('Calculating Elo...')
@@ -21,5 +22,8 @@ weights = st.calcSystemWeights()
 print('Calculating rankings...')
 ranks = st.getRanks()
 print('Calculating influence stats...')
-inf_df = st.getInfluenceStats(df, recalc=True)
-final_df = fl.arrangeFrame()
+sdf = st.arrangeFrame(scaling=None, noinfluence=True)[0]
+inf_df = st.getInfluenceStats(sdf, recalc=True)
+print('Grabbing player data from internet...')
+#This one will take a while
+il.getPlayerData(add_to_existing=False)

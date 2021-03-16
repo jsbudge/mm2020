@@ -458,7 +458,7 @@ Returns:
 '''
 def calcSystemWeights():
     #This should only need to be run once, since it saves its results out to a CSV
-    df = getGames('./data/MRegularSeasonDetailedResults.csv', split=False)
+    df = getGames(split=False)
     mo = pd.read_csv('./data/MMasseyOrdinals.csv')
     sweights = pd.DataFrame(data=np.nan, index=list(set(mo['SystemName'])), columns=list(set(df['Season'])))
     sprobs = pd.DataFrame(data=np.nan, index=list(set(mo['SystemName'])), columns=list(set(df['Season'])))
@@ -487,10 +487,10 @@ def calcSystemWeights():
                 else:
                     #Interpolate between system outputs to get a team's rank at the time of an actual game
                     #Linear interpolation
-                    # ranks = np.interp(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'], 
-                    #                   team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
+                    ranks = np.interp(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'], 
+                                       team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
                     #Cubic spline
-                    ranks = CubicSpline(team['RankingDayNum'], team['OrdinalRank'])(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values)
+                    #ranks = CubicSpline(team['RankingDayNum'], team['OrdinalRank'])(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values)
                     ranks[wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values < team['RankingDayNum'].values[0]] = team['OrdinalRank'].values[0]
                 wdf_diffs.loc[wdf_diffs['TID'] == tid, 'T_Rank'] = ranks
                 wdf_diffs.loc[wdf_diffs['OID'] == tid, 'O_Rank'] = ranks
@@ -520,35 +520,42 @@ Params:
 Returns:
     wdf: DataFrame - df with T_Rank and O_Rank columns added.
 '''
-def getRanks(df):
-    wdf = df.copy()
+def getRanks():
+    wdf = getGames(split=False).set_index(['GameID', 'Season', 'TID', 'OID'])
     wdf = wdf.sort_values('DayNum')
     weights = pd.read_csv('./data/sys_weights.csv')
     wdf['T_Rank'] = 999
     wdf['O_Rank'] = 999
-    mo = pd.read_csv('./data/MMasseyOrdinals.csv')
+    mo = pd.read_csv('./data/MMasseyOrdinals.csv').set_index(['Season', 'TeamID'])
     
     for idx, grp in tqdm(wdf.groupby(['Season', 'TID'])):
         #Sort values by GameID so they're in chronological order
         grp = grp.sort_values('GameID')
         
         #Get DataFrame of all the relevant rankings and weightings for that season
-        ranks = mo.loc[np.logical_and(mo['Season'] == idx[0], mo['TeamID'] == idx[1])].merge(weights, on='SystemName').sort_values('RankingDayNum')
-
-        #Calculate a weighted LOESS fit to the ranking curve. Gives more weight
-        #to systems that are more accurate in that season
-        wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
-                               wdf['TID'] == idx[1]), 'T_Rank'] = lowess(ranks['RankingDayNum'].values, 
-                                       ranks['OrdinalRank'].values, 
-                                       ranks[str(idx[0])].values, x0=grp['DayNum'], f=.25)
-                                                                              
-        #Apply these rankings to games where this team was the opponent
-        wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
-                               wdf['OID'] == idx[1]), 'O_Rank'] = wdf.loc[np.logical_and(wdf['Season'] == idx[0], 
-                               wdf['TID'] == idx[1]), 'T_Rank'].values
+        try:
+            ranks = mo.loc(axis=0)[idx[0], idx[1]].merge(weights, on='SystemName').sort_values('RankingDayNum')
+            #ranks = mo.loc[np.logical_and(mo['Season'] == idx[0], mo['TeamID'] == idx[1])].merge(weights, on='SystemName').sort_values('RankingDayNum')
     
+            #Calculate a weighted LOESS fit to the ranking curve. Gives more weight
+            #to systems that are more accurate in that season
+            wdf.loc[grp.index, 'T_Rank'] = lowess(ranks['RankingDayNum'].values, 
+                                           ranks['OrdinalRank'].values, 
+                                           ranks[str(idx[0])].values, x0=grp['DayNum'], f=.25)
+            
+                                                                                  
+            #Apply these rankings to games where this team was the opponent
+            #wdf.loc(axis=0)[:, idx[1], idx[0], :]['O_Rank'] = wdf.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values
+        except:
+            wdf.loc[grp.index, 'T_Rank'] = -1
+            
+    wdf.loc[wdf.index.get_level_values(0).duplicated(keep='first'), 'O_Rank'] = \
+        wdf.loc[wdf.index.get_level_values(0).duplicated(keep='last'), 'T_Rank'].values
+    wdf.loc[wdf.index.get_level_values(0).duplicated(keep='last'), 'O_Rank'] = \
+        wdf.loc[wdf.index.get_level_values(0).duplicated(keep='first'), 'T_Rank'].values
+        
     #Save results out to a CSV so we don't have to wait for it to calculate these every time
-    rank_df = wdf[['Season', 'GameID', 'DayNum', 'TID', 'OID', 'O_Rank', 'T_Rank']]
+    rank_df = wdf[['DayNum', 'O_Rank', 'T_Rank']].reset_index()
     rank_df.to_csv('./data/rank_file.csv', index=False)
     return wdf
 

@@ -13,13 +13,13 @@ import pandas as pd
 import statslib as st
 import framelib as fl
 
-df = st.getGames(files['MRegularSeasonDetailedResults'])
+df = st.getGames(split=False)
 print('Calculating Elo...')
 elos = st.calcElo()
 print('Calculating system weights...')
 weights = st.calcSystemWeights()
 print('Calculating rankings...')
-ranks = st.getRanks(df)
+ranks = st.getRanks()
 print('Calculating influence stats...')
-inf_df = st.getInfluenceStats(df, True)
+inf_df = st.getInfluenceStats(df, recalc=True)
 final_df = fl.arrangeFrame()

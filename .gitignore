@@ -1,6 +1,5 @@
 /seasonal_stats.csv
 /influence_stats.csv
-*.txt
 /cluster_analysis.py
 /sandbox.py
 /test.txt

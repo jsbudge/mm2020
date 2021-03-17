@@ -117,10 +117,10 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
       metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
     )
 
-learn_rate = 1e-4
-num_epochs = 600
+learn_rate = 1e-3
+num_epochs = 6000
 n_layers = 1
-n_nodes = 100
+n_nodes = 750
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 logdir = "logs/fit/" + runID
 k_calls = [tf.keras.callbacks.EarlyStopping(
@@ -334,6 +334,13 @@ subs.to_csv('./submissions/sub' + runID + '.csv', index=False)
 
 #%%
 #Double checking on tournament scores in our validation years
+print('\nScores for training years:')
+print('\t\tESPN\t\tLogLoss\t\tAcc.')
+for season in np.arange(2012, 2018):
+    br = Bracket(season, True)
+    br.run(m2, st_df, adv_tdf, [scale, scale_st2])
+    print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}'.format(season, br.espn_score, br.loss, br.accuracy))
+    
 print('\nScores for validation years:')
 print('\t\tESPN\t\tLogLoss\t\tAcc.')
 for season in [2018, 2019]:

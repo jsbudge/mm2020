@@ -185,6 +185,7 @@ class Bracket(object):
             self.flat_score = sum(success)
             self.loss = log_loss(success, bones.loc[bones['GameRound'] > 0, 'StrongSeed%'].values)
             self.accuracy = sum(success) / bones.loc[bones['GameRound'] > 0].shape[0]
+        self.classifier = classifier
         
     """
     getProbabilities
@@ -217,6 +218,7 @@ class Bracket(object):
         else:
             gm = pd.DataFrame(index=ag.index, data=classifier.predict(ag),
                               columns=['T%', 'O%'])
+        self.classifier = classifier
         return gm
         
     
@@ -234,6 +236,8 @@ class Bracket(object):
         try:
             with open(fname, 'w') as f:
                 f.write(str(self))
+                if self.isBuilt:
+                    self.classifier.summary(print_fn=lambda x: f.write(x + '\n'))
             return True
         except:
             return False
@@ -244,4 +248,16 @@ class kerasWrapper(object):
         self.model = model
         
     def predict(self, data):
-        return np.array(self.model.predict_proba(data))[0, :, :]
+        return self.model.predict_proba(data)
+    
+    def fit(self, X, y):
+        self.model.fit(X, y)
+    
+    def summary(self, print_fn=None):
+        d = self.model.__dict__
+        ret = ''
+        for k in d:
+            if type(d[k]) != list:
+                ret += k + ': ' + str(d[k]) + '\n'
+        print_fn(ret)
+        

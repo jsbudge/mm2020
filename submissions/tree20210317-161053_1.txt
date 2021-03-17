@@ -1,0 +1,98 @@
+Model evaluated for 2021. Score: 0, Loss: 0.00, Acc: 0.00%
+RND64			RND32			SWT16			E8			FF			CH
+Michigan: 0.71, 0.29 :TX Southern
+			Michigan: 0.56, 0.44 :LSU
+LSU: 0.63, 0.37 :St Bonaventure
+						Michigan: 0.49, 0.51 :Florida St
+Colorado: 0.57, 0.43 :Georgetown
+			Florida St: 0.49, 0.51 :Colorado
+Florida St: 0.69, 0.31 :UNC Greensboro
+									Florida St: 0.45, 0.55 :Alabama
+BYU: 0.52, 0.48 :UCLA
+			Texas: 0.66, 0.34 :UCLA
+Texas: 0.62, 0.38 :Abilene Chr
+						Alabama: 0.54, 0.46 :Texas
+Connecticut: 0.58, 0.42 :Maryland
+			Alabama: 0.57, 0.43 :Connecticut
+Alabama: 0.70, 0.30 :Iona
+												Alabama: 0.33, 0.67 :Gonzaga
+Gonzaga: 0.69, 0.31 :Appalachian St
+			Gonzaga: 0.68, 0.32 :Oklahoma
+Oklahoma: 0.59, 0.41 :Missouri
+						Gonzaga: 0.62, 0.38 :Virginia
+Creighton: 0.55, 0.45 :UC Santa Barbara
+			Virginia: 0.63, 0.37 :Creighton
+Virginia: 0.64, 0.36 :Ohio
+									Gonzaga: 0.59, 0.41 :Iowa
+USC: 0.57, 0.43 :Drake
+			Kansas: 0.56, 0.44 :USC
+Kansas: 0.74, 0.26 :E Washington
+						Iowa: 0.60, 0.40 :Kansas
+Oregon: 0.64, 0.36 :VCU
+			Iowa: 0.58, 0.42 :Oregon
+Iowa: 0.67, 0.33 :Grand Canyon
+															Gonzaga: 0.48, 0.52 :Baylor
+Illinois: 0.77, 0.23 :Drexel
+			Illinois: 0.65, 0.35 :Loyola-Chicago
+Loyola-Chicago: 0.52, 0.48 :Georgia Tech
+						Illinois: 0.74, 0.26 :Oklahoma St
+Tennessee: 0.70, 0.30 :Oregon St
+			Oklahoma St: 0.55, 0.45 :Tennessee
+Oklahoma St: 0.67, 0.33 :Liberty
+									Illinois: 0.51, 0.49 :Houston
+San Diego St: 0.54, 0.46 :Syracuse
+			West Virginia: 0.51, 0.49 :San Diego St
+West Virginia: 0.65, 0.35 :Morehead St
+						Houston: 0.63, 0.37 :San Diego St
+Clemson: 0.57, 0.43 :Rutgers
+			Houston: 0.71, 0.29 :Clemson
+Houston: 0.72, 0.28 :Cleveland St
+												Illinois: 0.49, 0.51 :Baylor
+Baylor: 0.73, 0.27 :Hartford
+			Baylor: 0.68, 0.32 :North Carolina
+North Carolina: 0.54, 0.46 :Wisconsin
+						Baylor: 0.72, 0.28 :Villanova
+Villanova: 0.60, 0.40 :Winthrop
+			Purdue: 0.43, 0.57 :Villanova
+Purdue: 0.61, 0.39 :North Texas
+									Baylor: 0.68, 0.32 :Arkansas
+Texas Tech: 0.61, 0.39 :Utah St
+			Arkansas: 0.58, 0.42 :Texas Tech
+Arkansas: 0.61, 0.39 :Colgate
+						Ohio St: 0.46, 0.54 :Arkansas
+Florida: 0.49, 0.51 :Virginia Tech
+			Ohio St: 0.58, 0.42 :Florida
+Ohio St: 0.61, 0.39 :Oral Roberts
+base_estimator: DecisionTreeClassifier()
+n_estimators: 1500
+estimator_params: ('criterion', 'max_depth', 'min_samples_split', 'min_samples_leaf', 'min_weight_fraction_leaf', 'max_features', 'max_leaf_nodes', 'min_impurity_decrease', 'min_impurity_split', 'random_state', 'ccp_alpha')
+bootstrap: True
+oob_score: False
+n_jobs: None
+random_state: None
+verbose: 0
+warm_start: False
+class_weight: None
+max_samples: None
+criterion: gini
+max_depth: None
+min_samples_split: 2
+min_samples_leaf: 1
+min_weight_fraction_leaf: 0.0
+max_features: auto
+max_leaf_nodes: None
+min_impurity_decrease: 0.0
+min_impurity_split: None
+ccp_alpha: 0.0
+n_features_in_: 30
+n_features_: 30
+n_outputs_: 1
+classes_: [False  True]
+n_classes_: 2
+base_estimator_: DecisionTreeClassifier()
+
+
+Scores for validation years:
+		ESPN		LogLoss		Acc.
+2018		840		0.66			0.60
+2019		1250		0.56			0.68

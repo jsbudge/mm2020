@@ -16,7 +16,7 @@ from datetime import datetime
 from tourney import Bracket, kerasWrapper
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier, kernels
 from sklearn.feature_selection import RFECV
 from sklearn.neural_network import MLPClassifier
@@ -43,7 +43,7 @@ names = st.loadTeamNames()
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 #%%
 print('Transforming data...')
-kpca = KernelPCA(n_components=20)
+kpca = KernelPCA(n_components=30)
 merge_df = st.merge(st_df, adv_tdf)
 k_df = pd.DataFrame(index=merge_df.index, data=kpca.fit_transform(merge_df))
 ml_df = st.getMatches(tdf, k_df, diff=True).sort_index()
@@ -79,11 +79,9 @@ p_df = pd.DataFrame(index=pred_feats.index, data=kpca.transform(pred_feats))
 pred_1 = st.getMatches(sub_df, p_df, diff=True).astype(np.float32)
 scale_pred_feats = rescale(pred_1, scale)
 
-models = [RandomForestClassifier(n_estimators=150),
-           RandomForestClassifier(n_estimators=50),
-           GaussianProcessClassifier(kernel=kernels.RBF(2)),
-           GaussianProcessClassifier(kernel=kernels.RBF(1.0)),
-           MLPClassifier(learning_rate='adaptive')]
+models = [RandomForestClassifier(n_estimators=500),
+           RandomForestClassifier(n_estimators=1500),
+           GaussianProcessClassifier(kernel=kernels.RBF(1.0))]
           
 models = [kerasWrapper(m) for m in models]
 
@@ -92,13 +90,19 @@ print('Running fitting and predictions...')
 #Now we make predictions for the tournament of the year
 for idx, m in tqdm(enumerate(models)):
     m.fit(Xt, yt)
+    val_str = ''
     sub_preds = m.predict(scale_pred_feats)
     sub_df['T_Win%'] = sub_preds[:, 0]
     sub_df['O_Win%'] = sub_preds[:, 1]
     sub_df['PredWin'] = [names[tids[n]] if sub_preds[n, 0] > .5 else names[oids[n]] for n in range(sub_df.shape[0])]
-    
+    val_str += '\nScores for validation years:\n'
+    val_str += '\t\tESPN\t\tLogLoss\t\tAcc.\n'
+    for season in [2018, 2019]:
+        br = Bracket(season, True)
+        br.run(m, k_df, scaling=scale)
+        val_str += '{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}\n'.format(season, br.espn_score, br.loss, br.accuracy)
     b2021.run(m, p_df, scaling=scale)
-    b2021.printTree('./submissions/tree' + runID + '_{}.txt'.format(idx))
+    b2021.printTree('./submissions/tree' + runID + '_{}.txt'.format(idx), val_str = val_str)
     subs['Pred'] = sub_df['T_Win%'].values
     subs.to_csv('./submissions/sub' + runID + '_{}.csv'.format(idx), index=False)
 

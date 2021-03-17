@@ -232,12 +232,14 @@ class Bracket(object):
     Returns:
         True if successful
     '''
-    def printTree(self, fname):
+    def printTree(self, fname, val_str=None):
         try:
             with open(fname, 'w') as f:
                 f.write(str(self))
                 if self.isBuilt:
                     self.classifier.summary(print_fn=lambda x: f.write(x + '\n'))
+                if val_str is not None:
+                    f.write(val_str)
             return True
         except:
             return False

@@ -117,10 +117,10 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
       metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
     )
 
-learn_rate = 1e-3
+learn_rate = 1e-5
 num_epochs = 6000
-n_layers = 1
-n_nodes = 750
+n_layers = 2
+n_nodes = 600
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 logdir = "logs/fit/" + runID
 k_calls = [tf.keras.callbacks.EarlyStopping(
@@ -301,6 +301,25 @@ for n in augdumb[-5:]:
     print(names[row['AugPredWin'].values[0]] + ' ({:.2f}) vs '.format(winperc) + names[row['TrueWin'].values[0]] + ' in {}'.format(row.index.get_level_values(1).values[0]))
 
 #%%
+#Double checking on tournament scores in our validation years
+val_str = ''
+val_str += '\nScores for training years:\n'
+val_str += '\t\tESPN\t\tLogLoss\t\tAcc.\n'
+for season in np.arange(2012, 2018):
+    br = Bracket(season, True)
+    br.run(m2, st_df, adv_tdf, [scale, scale_st2])
+    val_str += '{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}\n'.format(season, br.espn_score, br.loss, br.accuracy)
+    
+val_str += '\nScores for validation years:\n'
+val_str += '\t\tESPN\t\tLogLoss\t\tAcc.\n'
+for season in [2018, 2019]:
+    br = Bracket(season, True)
+    br.run(m2, st_df, adv_tdf, [scale, scale_st2])
+    val_str += '{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}\n'.format(season, br.espn_score, br.loss, br.accuracy)
+    
+print(val_str)
+    
+#%%
 #Now we make predictions for the tournament of the year
 subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
 sub_df = pd.DataFrame(columns=['GameID'], data=np.arange(subs.shape[0]),
@@ -327,25 +346,11 @@ sub_df['PredWin'] = [names[tids[n]] if sub_preds[n, 0] > .5 else names[oids[n]] 
 
 b2021 = Bracket(2021)
 b2021.run(m2, st_df, pred_tdf, [scale, scale_st2])
-b2021.printTree('./submissions/tree' + runID + '.txt')
+b2021.printTree('./submissions/tree' + runID + '.txt', val_str=val_str)
 
 subs['Pred'] = sub_df['T_Win%'].values
 subs.to_csv('./submissions/sub' + runID + '.csv', index=False)
 
-#%%
-#Double checking on tournament scores in our validation years
-print('\nScores for training years:')
-print('\t\tESPN\t\tLogLoss\t\tAcc.')
-for season in np.arange(2012, 2018):
-    br = Bracket(season, True)
-    br.run(m2, st_df, adv_tdf, [scale, scale_st2])
-    print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}'.format(season, br.espn_score, br.loss, br.accuracy))
-    
-print('\nScores for validation years:')
-print('\t\tESPN\t\tLogLoss\t\tAcc.')
-for season in [2018, 2019]:
-    br = Bracket(season, True)
-    br.run(m2, st_df, adv_tdf, [scale, scale_st2])
-    print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}'.format(season, br.espn_score, br.loss, br.accuracy))
+
     
 

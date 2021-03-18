@@ -246,11 +246,15 @@ class Bracket(object):
         
         
 class kerasWrapper(object):
-    def __init__(self, model):
+    def __init__(self, model, reg=False):
+        self.isRegression = reg
         self.model = model
         
     def predict(self, data):
-        return self.model.predict_proba(data)
+        if self.isRegression:
+            return st.getPointSpreadProbability(self.model.predict(data))
+        else:
+            return self.model.predict_proba(data)
     
     def fit(self, X, y):
         self.model.fit(X, y)

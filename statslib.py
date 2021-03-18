@@ -11,6 +11,7 @@ from tqdm import tqdm
 from scipy.linalg import solve
 from scipy.interpolate import CubicSpline
 from scipy.stats import hmean, iqr
+from scipy.special import erf
 from sklearn.preprocessing import RobustScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
@@ -373,7 +374,7 @@ Returns:
     wdf: DataFrame - frame with a single entry per team per season, with the means
                         and added stats for that team.
 '''
-def getSeasonalStats(df, strat='rank', seasonal_only=False):
+def getSeasonalStats(df, strat='rank', av_only=False, seasonal_only=False):
     wdf = df.groupby(['Season', 'TID']).mean()
     avdf = df.copy()
     for id_col in ['Season', 'TID', 'GameID', 'GLoc', 'DayNum', 'OID']:
@@ -398,10 +399,11 @@ def getSeasonalStats(df, strat='rank', seasonal_only=False):
             data = dfapp.mean()
         for idx, row in wdf.iterrows():
                 wdf.loc[idx] = data.loc[idx]
-    wdf['T_Win%'] = dfapp.apply(lambda x: sum(x['T_Score'] > x['O_Score']) / x.shape[0])
-    wdf['T_PythWin%'] = dfapp.apply(lambda grp: sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91))
-    wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(400-grp['O_Rank'], weights=grp['O_Elo']) / 4)
-    wdf['T_ExpWin%'] = dfapp.apply(lambda x: sum(x['T_Elo'] > x['O_Elo']) / x.shape[0])
+    if not av_only or seasonal_only:
+        wdf['T_Win%'] = dfapp.apply(lambda x: sum(x['T_Score'] > x['O_Score']) / x.shape[0])
+        wdf['T_PythWin%'] = dfapp.apply(lambda grp: sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91))
+        wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(400-grp['O_Rank'], weights=grp['O_Elo']) / 4)
+        wdf['T_ExpWin%'] = dfapp.apply(lambda x: sum(x['T_Elo'] > x['O_Elo']) / x.shape[0])
     if seasonal_only:
         wdf = wdf[['T_Win%', 'T_PythWin%', 'T_SoS', 'T_ExpWin%']]
     return wdf
@@ -728,6 +730,13 @@ def arrangeTourneyGames(noraw=False):
     tts = tts.drop(columns=['DayNum'])
     tty.index = tts.index
     return tts, tty, ttsdays
+
+def getPointSpreadProbabilityFromElo(df):
+    elodiff = df['T_Elo'] - df['O_Elo']
+    eloNorm = erf(3 * elodiff / elodiff.max()) / 2 + .5
+    pdiff = df['T_Score'] - df['O_Score']
+    coeffs = np.polyfit(pdiff, eloNorm, 3)
+    return np.poly1d(coeffs)
 
 '''
 getMatches

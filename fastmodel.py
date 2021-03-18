@@ -14,14 +14,15 @@ import statslib as st
 from tqdm import tqdm
 from datetime import datetime
 from tourney import Bracket, kerasWrapper
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, PowerTransformer, OneHotEncoder
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, StackingClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier, kernels
 from sklearn.feature_selection import RFECV
 from sklearn.neural_network import MLPClassifier
 from sklearn.decomposition import KernelPCA
 from sklearn.metrics import log_loss
+from sklearn.svm import NuSVC
 
 def shuffle(df):
     idx = np.random.permutation(np.arange(df.shape[0]))
@@ -38,7 +39,7 @@ tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
 adv_tdf = st.getTourneyStats(tdf, sdf)
 st_df = st.getSeasonalStats(sdf, strat='gausselo')
 #st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
-scale = StandardScaler()
+scale = PowerTransformer()
 names = st.loadTeamNames()
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 #%%
@@ -79,9 +80,14 @@ p_df = pd.DataFrame(index=pred_feats.index, data=kpca.transform(pred_feats))
 pred_1 = st.getMatches(sub_df, p_df, diff=True).astype(np.float32)
 scale_pred_feats = rescale(pred_1, scale)
 
-models = [RandomForestClassifier(n_estimators=500),
-           RandomForestClassifier(n_estimators=1500),
-           GaussianProcessClassifier(kernel=kernels.RBF(1.0))]
+models = [RandomForestClassifier(n_estimators=100),
+           RandomForestClassifier(n_estimators=500),
+           GaussianProcessClassifier(kernel=kernels.DotProduct(sigma_0_bounds=(1e-11, 1e-11))),
+           NuSVC(probability=True),
+           StackingClassifier([('rf1', RandomForestClassifier(n_estimators=100)),
+           ('rf2', RandomForestClassifier(n_estimators=500)),
+           ('gpc', GaussianProcessClassifier(kernel=kernels.DotProduct(sigma_0_bounds=(1e-11, 1e-11)))),
+           ('nsvc', NuSVC(probability=True))])]
           
 models = [kerasWrapper(m) for m in models]
 

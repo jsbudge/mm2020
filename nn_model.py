@@ -17,7 +17,7 @@ from tqdm import tqdm
 from itertools import combinations
 import seaborn as sns
 import eventlib as ev
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, PowerTransformer, OneHotEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import log_loss
 import tensorflow as tf
@@ -43,15 +43,16 @@ def compile_model(state_sz, layer_sz, n_layers, optimizer='adam', metrics=['accu
     out = layers.Dense(layer_sz, activation='relu', name='init_dense',
                            kernel_regularizer=regularizers.l2(1e-1),
                            bias_regularizer=regularizers.l2(1e-1))(inp)
-    out = layers.Dropout(dropout_rate)(out)
-    for n in range(n_layers):
-        out = layers.Dense(layer_sz, activation='relu',
-                           name='dense_{}'.format(n),
-                           kernel_regularizer=regularizers.l2(1e-1),
-                           bias_regularizer=regularizers.l2(1e-1))(out)
+    if n_layers > 1:
         out = layers.Dropout(dropout_rate)(out)
-    out = layers.Dense(layer_sz, activation='relu',
-                       name='final_dense')(out)
+        for n in range(n_layers - 1):
+            out = layers.Dense(layer_sz, activation='relu',
+                               name='dense_{}'.format(n),
+                               kernel_regularizer=regularizers.l2(1e-1),
+                               bias_regularizer=regularizers.l2(1e-1))(out)
+            out = layers.Dropout(dropout_rate)(out)
+        out = layers.Dense(layer_sz, activation='relu',
+                           name='final_dense')(out)
     smax = layers.Dense(2, activation='softmax',
                         name='output')(out)
     model = keras.Model(inputs=inp, outputs=smax)
@@ -69,10 +70,10 @@ def shuffle(df):
     return df.iloc[idx], idx
 
 #%%
-
+print('Loading raw data...')
 tune_hyperparams = False
-scale = StandardScaler()
-scale_st2 = StandardScaler()
+scale = PowerTransformer()
+scale_st2 = PowerTransformer()
 names = st.loadTeamNames()
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
@@ -95,7 +96,7 @@ rank_bench = sum(np.logical_and(sdf['T_Rank'].values - sdf['O_Rank'].values > 0,
     sum(np.logical_and(sdf['T_Rank'].values - sdf['O_Rank'].values < 0,
                        target[:, 1])) / ml_df.shape[0]
 #%%
-
+print('Splitting and rescaling...')
 #Split features into a train and test set
 Xt, Xs, yt, ys = train_test_split(ml_df, target)
 scale.fit(Xt)
@@ -117,10 +118,10 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
       metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
     )
 
-learn_rate = 1e-5
+learn_rate = 1e-3
 num_epochs = 6000
-n_layers = 2
-n_nodes = 600
+n_layers = 1
+n_nodes = 800
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 logdir = "logs/fit/" + runID
 k_calls = [tf.keras.callbacks.EarlyStopping(
@@ -180,7 +181,7 @@ else:
               callbacks=k_calls, verbose=2)
 
 #%%
-
+print('Splitting and rescaling stage 2...')
 #Training sets for tournament data
 tml_df = st.getMatches(tdf, st_df, diff=True).astype(np.float32).dropna()
 tml_df = rescale(tml_df, scale)

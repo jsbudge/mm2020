@@ -21,7 +21,10 @@ import seaborn as sns
 import eventlib as ev
 from sklearn.decomposition import KernelPCA, TruncatedSVD
 from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.preprocessing import StandardScaler, PowerTransformer, OneHotEncoder
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.covariance import oas
 import matplotlib.pyplot as plt
 from tourney import Bracket
 import tensorflow as tf
@@ -32,73 +35,71 @@ from keras.callbacks import TensorBoard
 from tensorflow.keras import backend as K
 from datetime import datetime
 
+def shuffle(df):
+    idx = np.random.permutation(np.arange(df.shape[0]))
+    return df.iloc[idx], idx
+
+def rescale(df, scaler):
+    return pd.DataFrame(index=df.index, columns=df.columns,
+                        data=scaler.transform(df))
+
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
-sdf_t.index = sdf.index
+df1 = sdf.drop(columns=[col for col in sdf.columns if col[:2] != 'T_'])
+df2 = sdf.drop(columns=[col for col in sdf.columns if col[:2] != 'O_'])
+df2.columns = ['T_' + col[2:] for col in df2.columns]
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
-adv_tdf = st.getTourneyStats(tdf, sdf)
-st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
-av_df = st.getSeasonalStats(sdf, strat='relelo')
+scale = StandardScaler()
 
 #%%
-total_df = st.merge(savdf, inf_df)
 
-total_mu = total_df.groupby(['Season']).mean()
-total_std = total_df.groupby(['Season']).std()
-total_df = st.normalizeToSeason(total_df)
+scale.fit(df1)
+df1 = rescale(df1, scale)
+df2 = rescale(df2, scale)
 
-lin_df = sdf[['T_FGA', 'T_FGM', 'T_FGM3', 'T_FGA3', 'T_FTM', 'T_FTA', 
-              'T_OR', 'T_DR', 'T_Ast', 'T_Stl', 'T_Blk']]
-lin_mu = lin_df.groupby(['Season']).mean()
-lin_std = lin_df.groupby(['Season']).std()
-for idx, grp in lin_df.groupby(['Season']):
-    lin_df.loc[grp.index] = (grp - grp.mean()) / grp.std()
+tsvd = TruncatedSVD(n_components=20)
+tsvd.fit(df2)
 
-#%%
-inp = keras.Input(shape=(total_df.shape[1] * 2,))
-out = layers.Dense(1600, kernel_regularizer=regularizers.l1(.1))(inp)
-out = layers.Dense(1600, kernel_regularizer=regularizers.l1(.1))(out)
-out = layers.Dense(1600, kernel_regularizer=regularizers.l1(.1))(out)
-out = layers.Dense(1500, kernel_regularizer=regularizers.l1(.1))(out)
-out = layers.Dense(1500, kernel_regularizer=regularizers.l1(.1))(out)
-reg = layers.Dense(lin_df.shape[1],
-                        name='output')(out)
-model = keras.Model(inputs=inp, outputs=reg)
-model.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-2),
-              loss=['mean_squared_error'])
+df1 = pd.DataFrame(index=df1.index, data=tsvd.transform(df1))
+df2 = pd.DataFrame(index=df2.index, data=tsvd.transform(df2))
+
+ml_df = df1 - df2
 
 #%%
-K.clear_session()
 
-#MODEL STAGE TWO
-logdir = "./logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-k_calls = [tf.keras.callbacks.EarlyStopping(
-                    monitor="val_loss",
-                    min_delta=1e-4,
-                    patience=15,
-                    verbose=0,
-                    mode="auto",
-                    baseline=None,
-                    restore_best_weights=True),
-            TensorBoard(histogram_freq=3, write_images=False,
-                        log_dir=logdir)]
-tdf_seas = list(set(total_df.index.get_level_values(0)))
-good_seasons = [True if idx[1] in tdf_seas else False for idx, row in lin_df.iterrows()]
-targets = lin_df.loc[good_seasons].sort_index()
-adf = st.getMatches(lin_df.loc[good_seasons], total_df).sort_index()
-Xt, Xs, yt, ys = train_test_split(adf, targets)
-model.fit(Xt, yt, epochs=10, validation_data=(Xs, ys),
-          callbacks=k_calls)
+Xt, Xs, yt, ys = train_test_split(ml_df, sdf_t)
 
-adf = st.getMatches(tdf, total_df)
-res_df = pd.DataFrame(index=tdf.index, columns=lin_df.columns, data=model.predict(adf) * \
-    lin_std.loc[season].values[None, :] + lin_mu.loc[season].values[None, :])
-            
-res_df = res_df.dropna().sort_index().astype(float).round().astype(int)
-ntdf = tdf.loc[res_df.index, res_df.columns].sort_index()
-
-res_df['Winner'] = tdf_t
+scale.fit(Xt)
+Xt = rescale(Xt, scale)
+Xs = rescale(Xs, scale)
 
 #%%
+
+rfc = RandomForestClassifier(n_estimators=500)
+rfc.fit(Xt, yt)
+
+#%%
+
+k_mu = df1.groupby(['Season', 'TID']).mean()
+k_std = pd.DataFrame(index=k_mu.index, columns=['COV'])
+for idx, grp in df1.groupby(['Season', 'TID']):
+    k_std.loc[idx, 'COV'] = oas(grp)[0]
+
+#%%
+print('Running simulations...')
+
+sim_res = pd.DataFrame(index=tdf.index, columns=['T%', 'O%'])
+for idx, row in tdf.iterrows():
+    t_mu = k_mu.loc[(idx[1], idx[2])]
+    t_cov = k_std.loc[(idx[1], idx[2])][0]
+    t_gen = np.random.multivariate_normal(t_mu, t_cov, 100)
+    o_mu = k_mu.loc[(idx[1], idx[3])]
+    o_cov = k_std.loc[(idx[1], idx[3])][0]
+    o_gen = np.random.multivariate_normal(o_mu, o_cov, 100)
+    res = rfc.predict(t_gen - o_gen)
+    sim_res.loc[idx, ['T%', 'O%']] = [sum(res) / 100, 1 - sum(res) / 100]
+    
+    
+
 
 
 

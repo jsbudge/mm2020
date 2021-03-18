@@ -1,0 +1,118 @@
+Model evaluated for 2021. Score: 0, Loss: 0.00, Acc: 0.00%
+RND64			RND32			SWT16			E8			FF			CH
+Michigan: 0.54, 0.46 :Mt St Mary's
+			Michigan: 0.33, 0.67 :LSU
+LSU: 0.63, 0.37 :St Bonaventure
+						Michigan: 0.46, 0.54 :Florida St
+Colorado: 0.70, 0.30 :Georgetown
+			Florida St: 0.56, 0.44 :Colorado
+Florida St: 0.54, 0.46 :UNC Greensboro
+									Michigan: 0.58, 0.42 :Texas
+BYU: 0.41, 0.59 :UCLA
+			Texas: 0.57, 0.43 :UCLA
+Texas: 0.57, 0.43 :Abilene Chr
+						Connecticut: 0.63, 0.37 :Texas
+Connecticut: 0.70, 0.30 :Maryland
+			Alabama: 0.51, 0.49 :Connecticut
+Alabama: 0.52, 0.48 :Iona
+												Michigan: 0.51, 0.49 :Gonzaga
+Gonzaga: 0.50, 0.50 :Appalachian St
+			Gonzaga: 0.46, 0.54 :Oklahoma
+Oklahoma: 0.56, 0.44 :Missouri
+						Gonzaga: 0.47, 0.53 :Virginia
+Creighton: 0.47, 0.53 :UC Santa Barbara
+			Virginia: 0.52, 0.48 :Creighton
+Virginia: 0.62, 0.38 :Ohio
+									Gonzaga: 0.51, 0.49 :Iowa
+USC: 0.60, 0.40 :Wichita St
+			Kansas: 0.64, 0.36 :USC
+Kansas: 0.76, 0.24 :E Washington
+						Iowa: 0.55, 0.45 :Kansas
+Oregon: 0.72, 0.28 :VCU
+			Iowa: 0.54, 0.46 :Oregon
+Iowa: 0.52, 0.48 :Grand Canyon
+															Gonzaga: 0.46, 0.54 :Baylor
+Illinois: 0.63, 0.37 :Drexel
+			Illinois: 0.63, 0.37 :Loyola-Chicago
+Loyola-Chicago: 0.60, 0.40 :Georgia Tech
+						Illinois: 0.61, 0.39 :Oklahoma St
+Tennessee: 0.67, 0.33 :Oregon St
+			Oklahoma St: 0.44, 0.56 :Tennessee
+Oklahoma St: 0.68, 0.32 :Liberty
+									Illinois: 0.51, 0.49 :Houston
+San Diego St: 0.54, 0.46 :Syracuse
+			West Virginia: 0.51, 0.49 :Syracuse
+West Virginia: 0.49, 0.51 :Morehead St
+						Houston: 0.49, 0.51 :Syracuse
+Clemson: 0.60, 0.40 :Rutgers
+			Houston: 0.47, 0.53 :Clemson
+Houston: 0.56, 0.44 :Cleveland St
+												Houston: 0.43, 0.57 :Baylor
+Baylor: 0.51, 0.49 :Hartford
+			Baylor: 0.55, 0.45 :Wisconsin
+North Carolina: 0.54, 0.46 :Wisconsin
+						Baylor: 0.49, 0.51 :Villanova
+Villanova: 0.53, 0.47 :Winthrop
+			Purdue: 0.40, 0.60 :Villanova
+Purdue: 0.63, 0.37 :North Texas
+									Baylor: 0.79, 0.21 :Arkansas
+Texas Tech: 0.63, 0.37 :Utah St
+			Arkansas: 0.43, 0.57 :Texas Tech
+Arkansas: 0.63, 0.37 :Colgate
+						Ohio St: 0.32, 0.68 :Arkansas
+Florida: 0.57, 0.43 :Virginia Tech
+			Ohio St: 0.54, 0.46 :Virginia Tech
+Ohio St: 0.58, 0.42 :Oral Roberts
+decision_function_shape: ovr
+break_ties: False
+kernel: rbf
+degree: 3
+gamma: scale
+coef0: 0.0
+tol: 0.001
+C: 0.0
+nu: 0.5
+epsilon: 0.0
+shrinking: True
+probability: True
+cache_size: 200
+class_weight: None
+verbose: False
+max_iter: -1
+random_state: None
+_sparse: False
+n_features_in_: 40
+class_weight_: [1. 1.]
+classes_: [False  True]
+_gamma: 0.025
+support_: [   0    2    3 ... 1952 1959 1960]
+support_vectors_: [[ 1.49317669e-01  8.95272189e-01 -3.73557173e-01 ...  1.31785970e-01
+  -2.69122388e-01 -1.10620368e+00]
+ [-7.47341597e-01 -8.17776793e-01  4.32218869e-01 ...  9.81363654e-01
+  -6.22946358e-01  4.28547733e-01]
+ [-1.40530960e+00  2.99918185e-01  2.04826222e+00 ... -5.32306324e-02
+  -4.26393100e-01  1.20616017e-03]
+ ...
+ [ 1.39322861e+00 -2.22917410e-01 -8.57625489e-01 ... -7.04788915e-01
+   1.48593269e+00  5.79033792e-01]
+ [-7.78717237e-01  1.29395958e+00 -4.06304268e-03 ...  6.99642953e-01
+  -1.19233310e+00  2.76405269e-01]
+ [ 4.53892111e-02  2.81975435e-01 -9.44198768e-01 ... -1.48177363e+00
+   6.31237530e-01 -1.88817068e+00]]
+_n_support: [835 835]
+dual_coef_: [[-3.70807086 -2.55936113 -0.28860039 ...  1.02853145  3.34905374
+   2.24454597]]
+intercept_: [7.64605813e-05]
+_probA: [-1.1121397]
+_probB: [0.0007633]
+fit_status_: 0
+shape_fit_: (1962, 40)
+_intercept_: [-7.64605813e-05]
+_dual_coef_: [[ 3.70807086  2.55936113  0.28860039 ... -1.02853145 -3.34905374
+  -2.24454597]]
+
+
+Scores for validation years:
+		ESPN		LogLoss		Acc.
+2018		1150		0.63			0.65
+2019		750		0.57			0.68

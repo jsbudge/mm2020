@@ -86,8 +86,8 @@ for idx, grp in df1.groupby(['Season', 'TID']):
 
 #%%
 print('Running simulations...')
-
-sim_res = pd.DataFrame(index=tdf.index, columns=['T%', 'O%'])
+names = st.loadTeamNames()
+sim_res = pd.DataFrame(index=tdf.index, columns=['T%', 'TName', 'O%', 'OName'])
 for idx, row in tdf.iterrows():
     t_mu = k_mu.loc[(idx[1], idx[2])]
     t_cov = k_std.loc[(idx[1], idx[2])][0]
@@ -96,9 +96,34 @@ for idx, row in tdf.iterrows():
     o_cov = k_std.loc[(idx[1], idx[3])][0]
     o_gen = np.random.multivariate_normal(o_mu, o_cov, 100)
     res = rfc.predict(t_gen - o_gen)
-    sim_res.loc[idx, ['T%', 'O%']] = [sum(res) / 100, 1 - sum(res) / 100]
+    sim_res.loc[idx, ['T%', 'TName', 'O%', 'OName']] = [sum(res) / 100, names[idx[2]], 
+                                                        1 - sum(res) / 100, names[idx[3]]]
     
+#%%
+subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
+sub_df = pd.DataFrame(columns=['GameID'], data=np.arange(subs.shape[0]),
+                      dtype=int)
+for idx, row in subs.iterrows():
+    tmp = row['ID'].split('_')
+    sub_df.loc[idx, ['Season', 'TID', 'OID']] = [int(t) for t in tmp]
+s2_df = sub_df.copy()
+s2_df['TID'] = sub_df['OID']
+s2_df['OID'] = sub_df['TID']
+sub_df = sub_df.set_index(['GameID', 'Season', 'TID', 'OID'])
+s2_df = s2_df.set_index(['GameID', 'Season', 'TID', 'OID'])
+sub_df['Pivot'] = 1; s2_df['Pivot'] = 1
     
+sim_res = pd.DataFrame(index=tdf.index, columns=['T%', 'TName', 'O%', 'OName'])
+for idx, row in sub_df.append(s2_df).iterrows():
+    t_mu = k_mu.loc[(idx[1], idx[2])]
+    t_cov = k_std.loc[(idx[1], idx[2])][0]
+    t_gen = np.random.multivariate_normal(t_mu, t_cov, 100)
+    o_mu = k_mu.loc[(idx[1], idx[3])]
+    o_cov = k_std.loc[(idx[1], idx[3])][0]
+    o_gen = np.random.multivariate_normal(o_mu, o_cov, 100)
+    res = rfc.predict(t_gen - o_gen)
+    sim_res.loc[idx, ['T%', 'TName', 'O%', 'OName']] = [1 - sum(res) / 100, names[idx[2]], 
+                                                        sum(res) / 100, names[idx[3]]]
 
 
 

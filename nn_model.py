@@ -120,8 +120,8 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
 
 learn_rate = 1e-3
 num_epochs = 6000
-n_layers = 2
-n_nodes = 1200
+n_layers = 1
+n_nodes = 1800
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 logdir = "logs/fit/" + runID
 k_calls = [tf.keras.callbacks.EarlyStopping(

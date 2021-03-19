@@ -188,6 +188,41 @@ class Bracket(object):
         self.classifier = classifier
         
     """
+    run
+    Runs through the tournament using data provided and the trained classifier
+    provided.
+    
+    Params:
+        classifier: keras model with two softmax outputs.
+        feats: DataFrame - frame of team features to combine.
+        add_feats: DataFrame - for if we want a classifier with multiple inputs
+        scaling: sklearn Scaler - single instance of a scaler to use with
+            feats. If using add_feats, a list of two scalers.
+    """
+    def runWithFrame(self, gm):
+        bones = self.structure
+        for idx in range(bones.shape[0]):
+            row = bones.iloc[idx]
+            gm_res = gm.loc(axis=0)[:, self.season, row['StrongSeed'], row['WeakSeed']].values[0]
+            winner = row['StrongSeed'] if gm_res[0] > .5 else row['WeakSeed']
+            bones.loc[bones['Slot'] == row['Slot'], 
+                               ['Winner', 'StrongSeed%', 'WeakSeed%']] = \
+                                   [winner, gm_res[0], gm_res[1]]
+            if row['Slot'] in bones['StrongSeed'].values:
+                bones.loc[bones['StrongSeed'] == row['Slot'], 'StrongSeed'] = winner
+            else:
+                bones.loc[bones['WeakSeed'] == row['Slot'], 'WeakSeed'] = winner
+        self.isBuilt = True
+        if self.hasResults:
+            success = (self.truth.loc[self.truth['GameRound'] > 0, 'Winner'] - \
+                       bones.loc[bones['GameRound'] > 0, 'Winner']) == 0
+            score = sum(2**(self.truth.loc[self.truth['GameRound'] > 0, 'GameRound'].values-1) * 10 * success)
+            self.espn_score = score
+            self.flat_score = sum(success)
+            self.loss = log_loss(success, bones.loc[bones['GameRound'] > 0, 'StrongSeed%'].values)
+            self.accuracy = sum(success) / bones.loc[bones['GameRound'] > 0].shape[0]
+        
+    """
     getProbabilities
     Runs through every possible matchup for the season using data provided and the trained classifier
     provided.

@@ -27,6 +27,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.cluster import FeatureAgglomeration
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.decomposition import TruncatedSVD
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 import sklearn.linear_model as sk_lm
 from itertools import combinations
 plt.close('all')
@@ -86,13 +88,16 @@ exp_score = scorediff - (elodiff * elofit[0] + elofit[1])
 inf_df['ExpScDiff'] = exp_score.groupby(['Season', 'TID']).mean()
 
 #%%
-cong_df = st.merge(inf_df, tsdf, *[avs[m] for m in m_types])
+scale = StandardScaler()
+cong_df = st.merge(inf_df, tsdf, *[avs[m] for m in m_types]).dropna()
+cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(cong_df))
+tvsd = TruncatedSVD(n_components=250)
+
+cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(tvsd.fit_transform(cong_df)))
 tdf_diff = st.getMatches(tdf, cong_df, diff=True)
 
 #%%
 ntdiff = tdf_diff.dropna()
-ntdiff = ntdiff.drop(columns=['T_RankInf',
-                              'T_EloInf'])
 #ntdiff = ntdiff.loc[ntdiff.index.get_level_values(0).duplicated(keep='last')]
 scores = tdf.loc[ntdiff.index, 'T_Score'] - tdf.loc[ntdiff.index, 'O_Score']
 for s, grp in ntdiff.groupby(['Season']):
@@ -122,24 +127,23 @@ for n in range(20, ntdiff.shape[1] - 1):
         for l in lb:
             ntdiff = ntdiff.drop(columns=l[1:])
         break
-    
-    
-print('Combining similar stats...')
-#Combine the ones that are close to each other
-for n in range(20, ntdiff.shape[1] - 1):
-    sc, lb = overallScore(n, sc_df, np.min)
-    if sc >= .7:
-        print('{} clusters: {:.2f}'.format(n, sc))
-        for l in lb:
-            mcol = l[0]
-            mx = abs(np.corrcoef(ntdiff[l[0]], scores)[0, 1])
-            for col in l:
-                if mx < abs(np.corrcoef(ntdiff[col], scores)[0, 1]):
-                    mcol = col
-                    mx = abs(np.corrcoef(ntdiff[col], scores)[0, 1])
-            ntdiff = ntdiff.drop(columns=[col for col in l if col != mcol])
-        break
 
 #%%
+for col in ntdiff.columns:
+    if abs(np.corrcoef(ntdiff[col], scores)[1, 0]) < .2:
+        if abs(np.corrcoef(ntdiff[col], scores > 0)[1, 0]) < .2:
+            cong_df = cong_df.drop(columns=col)
+
+#%%
+#See if we can get some interaction stats
+polyfeats = PolynomialFeatures(degree=3, include_bias=False)
+cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(polyfeats.fit_transform(cong_df)))
+tdf_diff = st.getMatches(tdf, cong_df, diff=True)
+ntdiff = tdf_diff.dropna()
+for col in ntdiff.columns:
+    if abs(np.corrcoef(ntdiff[col], scores)[1, 0]) < .2:
+        if abs(np.corrcoef(ntdiff[col], scores > 0)[1, 0]) < .2:
+            cong_df = cong_df.drop(columns=col)
+#%%
 #Save everything out to a file so we can move between scripts easily
-cong_df[ntdiff.columns].to_csv('./data/CongStats.csv')
+cong_df.to_csv('./data/CongStats.csv')

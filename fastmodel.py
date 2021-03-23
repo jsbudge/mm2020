@@ -37,8 +37,8 @@ sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 #sdf_t.index = sdf.index
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
 adv_tdf = st.getTourneyStats(tdf, sdf)
-st_df = st.getSeasonalStats(sdf, strat='gausselo')
-#st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
+#st_df = st.getSeasonalStats(sdf, strat='gausselo')
+st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
 scale = PowerTransformer()
 names = st.loadTeamNames()
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -46,8 +46,8 @@ runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 print('Transforming data...')
 kpca = KernelPCA(n_components=30)
 merge_df = st.merge(st_df, adv_tdf)
-k_df = pd.DataFrame(index=merge_df.index, data=kpca.fit_transform(merge_df))
-ml_df = st.getMatches(tdf, k_df, diff=True).sort_index()
+#k_df = pd.DataFrame(index=merge_df.index, data=kpca.fit_transform(merge_df))
+ml_df = st.getMatches(tdf, merge_df, diff=True).sort_index()
 
 subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
 sub_df = pd.DataFrame(columns=['GameID'], data=np.arange(subs.shape[0]),
@@ -76,7 +76,7 @@ scale.fit(Xt)
 Xt = rescale(Xt, scale)
 Xs = rescale(Xs, scale)
 pred_feats = st.merge(st_df, pred_tdf)
-p_df = pd.DataFrame(index=pred_feats.index, data=kpca.transform(pred_feats))
+p_df = pred_feats #pd.DataFrame(index=pred_feats.index, data=kpca.transform(pred_feats))
 pred_1 = st.getMatches(sub_df, p_df, diff=True).astype(np.float32)
 scale_pred_feats = rescale(pred_1, scale)
 
@@ -105,7 +105,7 @@ for idx, m in tqdm(enumerate(models)):
     val_str += '\t\tESPN\t\tLogLoss\t\tAcc.\n'
     for season in [2018, 2019]:
         br = Bracket(season, True)
-        br.run(m, k_df, scaling=scale)
+        br.run(m, merge_df, scaling=scale)
         val_str += '{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}\n'.format(season, br.espn_score, br.loss, br.accuracy)
     b2021.run(m, p_df, scaling=scale)
     b2021.printTree('./submissions/tree' + runID + '_{}.txt'.format(idx), val_str = val_str)
@@ -120,7 +120,7 @@ for idx, m in enumerate(models):
     print('\t\tESPN\t\tLogLoss\t\tAcc.')
     for season in [2018, 2019]:
         br = Bracket(season, True)
-        br.run(m, k_df, scaling=scale)
+        br.run(m, merge_df, scaling=scale)
         print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}'.format(season, br.espn_score, br.loss, br.accuracy))
 
 

@@ -118,10 +118,10 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
       metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
     )
 
-learn_rate = 1e-3
+learn_rate = 1e-5
 num_epochs = 6000
-n_layers = 1
-n_nodes = 1800
+n_layers = 2
+n_nodes = 600
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 logdir = "logs/fit/" + runID
 k_calls = [tf.keras.callbacks.EarlyStopping(

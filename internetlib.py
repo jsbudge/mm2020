@@ -185,51 +185,17 @@ def getTeamSeasonalData(seasons=None, add_to_existing=True):
                 play_df = play_df.append(df)
             except:
                 print(team.name)
-    play_df = play_df.reset_index().set_index(['Season', 'abbreviation'])
     play_df['TID'] = 0
-    
-    tnames = st.loadTeamNames()
-    nms = [tnames[n] for n in tnames if type(n) == str]
-    nms_upper = [n.upper() for n in tnames if type(n) == str]
-    unknowns = list(set(nms_upper))
-    modnames = dict(zip(nms_upper, nms))
-    sdf, _, _ = st.arrangeFrame(scaling=None, noinfluence=True)
-    sum_df = sdf.groupby(['Season', 'TID']).sum()
-    tid_df = play_df[['assists', 'blocks', 'points', 'personal_fouls']]
-    comp_df = sum_df[['T_Ast', 'T_Blk', 'T_Score', 'T_PF']]
-    for idx, row in tid_df.iterrows():
-        if play_df.loc[idx, 'TID'] != 0:
-            continue
-        upop = dict(zip(unknowns, np.arange(len(unknowns))))
-        matches = get_close_matches(idx[1], unknowns)
-        if len(matches) == 1:
-            play_df.loc[play_df['index'] == idx[1], 'TID'] = modnames[matches[0]]
-            unknowns.pop(upop[matches[0]])
-        elif len(matches) > 1:
-            for m in matches:
-                tid = modnames[m]
-                try:
-                    if np.allclose(comp_df.loc(axis=0)[idx[0], tid].values,
-                                   row.values):
-                        play_df.loc[play_df['index'] == idx[1], 'TID'] = tid
-                        unknowns.pop(upop[m])
-                        break
-                except:
-                    continue
-        else:
-            for u in unknowns:
-                tid = modnames[u]
-                try:
-                    if np.allclose(comp_df.loc(axis=0)[idx[0], tid].values,
-                                   row.values):
-                        play_df.loc[play_df['index'] == idx[1], 'TID'] = tid
-                        unknowns.pop(upop[u])
-                        break
-                except:
-                    continue
+    idx = 1
+    for tid in list(set(play_df['abbreviation'])):
+        play_df.loc[play_df['abbreviation'] == tid, 'TID'] = idx
+        idx += 1
+    play_df = play_df.set_index(['Season', 'TID'])
             
     if add_to_existing:
-        ipd = pd.read_csv('./data/InternetTeamSeasonData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
-        sdf = sdf.append(ipd)
-    else:
-        sdf.to_csv('./data/InternetPlayerData.csv')
+        ipd = pd.read_csv('./data/InternetTeamSeasonData.csv').set_index(['Season', 'TID']).sort_index()
+        play_df = play_df.append(ipd)
+    play_df.to_csv('./data/InternetPlayerData.csv')
+    
+def getGameData(seasons=None, add_to_existing=False):
+    

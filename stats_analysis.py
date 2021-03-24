@@ -133,17 +133,6 @@ for col in ntdiff.columns:
     if abs(np.corrcoef(ntdiff[col], scores)[1, 0]) < .2:
         if abs(np.corrcoef(ntdiff[col], scores > 0)[1, 0]) < .2:
             cong_df = cong_df.drop(columns=col)
-
-#%%
-#See if we can get some interaction stats
-polyfeats = PolynomialFeatures(degree=3, include_bias=False)
-cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(polyfeats.fit_transform(cong_df)))
-tdf_diff = st.getMatches(tdf, cong_df, diff=True)
-ntdiff = tdf_diff.dropna()
-for col in ntdiff.columns:
-    if abs(np.corrcoef(ntdiff[col], scores)[1, 0]) < .2:
-        if abs(np.corrcoef(ntdiff[col], scores > 0)[1, 0]) < .2:
-            cong_df = cong_df.drop(columns=col)
 #%%
 #Save everything out to a file so we can move between scripts easily
 cong_df.to_csv('./data/CongStats.csv')

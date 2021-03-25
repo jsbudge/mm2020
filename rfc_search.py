@@ -15,8 +15,9 @@ from tqdm import tqdm
 from datetime import datetime
 from tourney import Bracket, kerasWrapper
 from sklearn.preprocessing import StandardScaler, PowerTransformer, OneHotEncoder, QuantileTransformer
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, BaggingClassifier
 from sklearn.metrics import log_loss
+from sklearn.svm import NuSVC
 import multiprocessing as mp
 
 def shuffle(df):
@@ -37,7 +38,16 @@ def seasonalCV(X, y):
         Xs, sidx = shuffle(X.loc[test])
         ys = y.loc[test].iloc[sidx]
         yield Xt, Xs, yt, ys, yr
-    
+        
+def splitSeason(X, y, yr):
+    seas = X.index.get_level_values(1)
+    train = seas != yr
+    test = seas == yr
+    Xt, tidx = shuffle(X.loc[train])
+    yt = y.loc[train].iloc[tidx]
+    Xs, sidx = shuffle(X.loc[test])
+    ys = y.loc[test].iloc[sidx]
+    return Xt, Xs, yt, ys
 
 print('Loading raw data...')
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
@@ -88,30 +98,98 @@ brackets = dict(zip(np.arange(2012, 2020),
 #%%
 print('Running fitting and predictions...')
 targets = tdf_t[ml_df.index]
-mdl_res = pd.DataFrame(columns=['season', 'param1', 'param2', 'espn', 'loss', 'acc'])
+mdl_df = pd.DataFrame()
 
-idx = 0
 #Sets of kernels with individual hyperparam optimization
-print('RFC')
-func_iter = [(i + j*15, n, crit) for i, n in enumerate(np.arange(50, 1500, 100)) for j, crit in enumerate(['gini', 'entropy'])]
     
-def rfc_iter(x):
-    for Xt, Xs, yt, ys, season in seasonalCV(ml_df, targets):
-        model = kerasWrapper(RandomForestClassifier(n_estimators=x[1],
-                                                    criterion=x[2]))
-        model.fit(Xt, yt)
-        brackets[season].run(model, merge_df, scaling=None)
-        return [season, x[1], x[2], 'rfc', 
-             brackets[season].espn_score, 
-             brackets[season].loss, brackets[season].accuracy]
+def rfc_iter(L, x):
+    Xt, Xs, yt, ys = splitSeason(ml_df, targets, x[2])
+    model = kerasWrapper(RandomForestClassifier(n_estimators=x[0],
+                                                criterion=x[1]))
+    model.fit(Xt, yt)
+    brackets[x[2]].run(model, merge_df, scaling=None)
+    L.append([x[2], x[0], x[1], 'rfc', 
+         brackets[x[2]].espn_score, 
+         brackets[x[2]].loss, brackets[x[2]].accuracy])
+    
+def ada_iter(L, x):
+    Xt, Xs, yt, ys = splitSeason(ml_df, targets, x[2])
+    model = kerasWrapper(AdaBoostClassifier(n_estimators=x[0],
+                                                learning_rate=x[1]))
+    model.fit(Xt, yt)
+    brackets[x[2]].run(model, merge_df, scaling=None)
+    L.append([x[2], x[0], x[1], 'ada', 
+         brackets[x[2]].espn_score, 
+         brackets[x[2]].loss, brackets[x[2]].accuracy])
+    
+def bag_iter(L, x):
+    Xt, Xs, yt, ys = splitSeason(ml_df, targets, x[2])
+    model = kerasWrapper(BaggingClassifier(base_estimator=x[1][1], n_estimators=x[0]))
+    model.fit(Xt, yt)
+    brackets[x[2]].run(model, merge_df, scaling=None)
+    L.append([x[2], x[0], x[1][0], 'bag', 
+         brackets[x[2]].espn_score, 
+         brackets[x[2]].loss, brackets[x[2]].accuracy])
 
-processes = []
-for f in func_iter:
-    p = mp.Process(target=rfc_iter, args=(f,))
-    processes.append(p)
-    p.start()
-for proc in processes:
-    proc.join()
+#%%
+print('RFC')
+mdl_res = []
+func_iter = [(n, crit, season) for n in np.arange(50, 1500, 100) \
+             for crit in ['gini', 'entropy'] for season in np.arange(2012, 2020)]
+    
+with mp.Manager() as man:
+    mdl_res = man.list()
+    processes = []
+    for f in func_iter:
+        p = mp.Process(target=rfc_iter, args=(mdl_res, f,))
+        processes.append(p)
+        p.start()
+    for proc in processes:
+        proc.join()
+    mdl_res = list(mdl_res)
+    
+mdl_df = mdl_df.append(pd.DataFrame(columns=['season', 'param1', 'param2', 'type', 'espn', 'loss', 'acc'],
+                      data=mdl_res).set_index(['season', 'param1', 'param2', 'type']))
 
+#%%
+print('Ada')
+mdl_res = []
+func_iter = [(n, crit, season) for n in np.arange(50, 1500, 100) \
+             for crit in [1e-5, 1e-4, 1e-2] for season in np.arange(2012, 2020)]
+    
+with mp.Manager() as man:
+    mdl_res = man.list()
+    processes = []
+    for f in func_iter:
+        p = mp.Process(target=ada_iter, args=(mdl_res, f,))
+        processes.append(p)
+        p.start()
+    for proc in processes:
+        proc.join()
+    mdl_res = list(mdl_res)
+    
+mdl_df = mdl_df.append(pd.DataFrame(columns=['season', 'param1', 'param2', 'type', 'espn', 'loss', 'acc'],
+                      data=mdl_res).set_index(['season', 'param1', 'param2', 'type']))
 
+#%%
+print('Bag')
+mdl_res = []
+func_iter = [(n, crit, season) for n in np.arange(10, 50, 20) \
+             for crit in [('svc', NuSVC()), ('dtree', None)] for season in np.arange(2012, 2020)]
+    
+with mp.Manager() as man:
+    mdl_res = man.list()
+    processes = []
+    for f in func_iter:
+        p = mp.Process(target=bag_iter, args=(mdl_res, f,))
+        processes.append(p)
+        p.start()
+    for proc in processes:
+        proc.join()
+    mdl_res = list(mdl_res)
+    
+mdl_df = mdl_df.append(pd.DataFrame(columns=['season', 'param1', 'param2', 'type', 'espn', 'loss', 'acc'],
+                      data=mdl_res).set_index(['season', 'param1', 'param2', 'type']))
 
+#%%
+av_df = mdl_df.groupby(['param1', 'param2', 'type']).mean()

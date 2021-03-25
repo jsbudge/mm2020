@@ -11,6 +11,7 @@ because this takes for-ev-er to run.
 """
 from sportsreference.ncaab.roster import Player
 from sportsreference.ncaab.teams import Teams, Team
+from sportsreference.ncaab.boxscore import Boxscore, Boxscores
 import pandas as pd
 from tqdm import tqdm
 import statslib as st
@@ -175,7 +176,7 @@ def getTeamSeasonalData(seasons=None, add_to_existing=True):
     #Grab the data from sportsreference
     play_df = pd.DataFrame()
     if seasons is None:
-        seasons = np.arange(2012, 2021)
+        seasons = np.arange(2012, 2022)
     for season in seasons:
         tm = Teams(season)
         for team in tqdm(tm):
@@ -198,4 +199,42 @@ def getTeamSeasonalData(seasons=None, add_to_existing=True):
     play_df.to_csv('./data/InternetPlayerData.csv')
     
 def getGameData(seasons=None, add_to_existing=False):
-    
+    play_df = pd.DataFrame()
+    if season is None:
+        seasons = np.arange(2012, 2022)
+    for season in seasons:
+        gms = Boxscores(datetime(season-1, 8, 1), datetime(season, 4, 30))
+        for gm in tqdm(gms.games):
+            for g in gms.games[gm]:
+                play_df = play_df.append(Boxscore(g['boxscore']).dataframe)
+    new_cols = []
+    for col in play_df.columns:
+        nc = col.replace('_', '')
+        nc = nc.replace('home', 'T_')
+        nc = nc.replace('away', 'O_')
+        nc = nc.replace('fieldgoal', 'FG')
+        nc = nc.replace('rating', 'Rtg')
+        nc = nc.replace('twopoint', '2Pt')
+        nc = nc.replace('percentage', '%')
+        nc = nc.replace('threepoint', '3Pt')
+        nc = nc.replace('freethrow', 'FT')
+        nc = nc.replace('defensive', 'D')
+        nc = nc.replace('offensive', 'O')
+        nc = nc.replace('ranking', 'Rank')
+        nc = nc.replace('effective', 'e')
+        nc = nc.replace('rebound', 'R')
+        nc = nc.replace('attempt', 'A')
+        nc = nc.replace('block', 'Blk')
+        nc = nc.replace('assist', 'Ast')
+        nc = nc.replace('steal', 'Stl')
+        nc = nc.replace('turnover', 'TO')
+        nc = nc.replace('trueshooting', 'TS')
+        nc = nc.replace('total', '')
+        nc = nc.replace('points', 'Score')
+        nc = nc.replace('personalfouls', 'PF')
+        nc = nc.replace('rate', 'Rate')
+        nc = nc.replace('pace', 'Pace')
+        nc = nc[:-1] if nc[-1] == 's' else nc
+        new_cols.append(nc)
+    play_df.columns = new_cols
+    return play_df

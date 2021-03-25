@@ -23,6 +23,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.decomposition import KernelPCA
 from sklearn.metrics import log_loss
 from sklearn.svm import NuSVC
+import multiprocessing as mp
 
 def shuffle(df):
     idx = np.random.permutation(np.arange(df.shape[0]))
@@ -42,6 +43,16 @@ def seasonalCV(X, y):
         Xs, sidx = shuffle(X.loc[test])
         ys = y.loc[test].iloc[sidx]
         yield Xt, Xs, yt, ys, yr
+        
+def splitSeason(X, y, yr):
+    seas = X.index.get_level_values(1)
+    train = seas != yr
+    test = seas == yr
+    Xt, tidx = shuffle(X.loc[train])
+    yt = y.loc[train].iloc[tidx]
+    Xs, sidx = shuffle(X.loc[test])
+    ys = y.loc[test].iloc[sidx]
+    return Xt, Xs, yt, ys
     
 
 print('Loading raw data...')
@@ -64,28 +75,28 @@ std_sc = merge_df.std()
 merge_df = (merge_df - mu_sc) / std_sc
 ml_df = st.getMatches(tdf, merge_df, diff=True).sort_index()
 
-subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
-sub_df = pd.DataFrame(columns=['GameID'], data=np.arange(subs.shape[0]),
-                      dtype=int)
-for idx, row in subs.iterrows():
-    tmp = row['ID'].split('_')
-    sub_df.loc[idx, ['Season', 'TID', 'OID']] = [int(t) for t in tmp]
-s2_df = sub_df.copy()
-s2_df['TID'] = sub_df['OID']
-s2_df['OID'] = sub_df['TID']
-sub_df = sub_df.set_index(['GameID', 'Season', 'TID', 'OID'])
-s2_df = s2_df.set_index(['GameID', 'Season', 'TID', 'OID'])
-sub_df['Pivot'] = 1; s2_df['Pivot'] = 1
-tids = sub_df.index.get_level_values(2)
-oids = sub_df.index.get_level_values(3)
-pred_tdf = st.getTourneyStats(sub_df.append(s2_df), sdf)
-b2021 = Bracket(2021)
+# subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
+# sub_df = pd.DataFrame(columns=['GameID'], data=np.arange(subs.shape[0]),
+#                       dtype=int)
+# for idx, row in subs.iterrows():
+#     tmp = row['ID'].split('_')
+#     sub_df.loc[idx, ['Season', 'TID', 'OID']] = [int(t) for t in tmp]
+# s2_df = sub_df.copy()
+# s2_df['TID'] = sub_df['OID']
+# s2_df['OID'] = sub_df['TID']
+# sub_df = sub_df.set_index(['GameID', 'Season', 'TID', 'OID'])
+# s2_df = s2_df.set_index(['GameID', 'Season', 'TID', 'OID'])
+# sub_df['Pivot'] = 1; s2_df['Pivot'] = 1
+# tids = sub_df.index.get_level_values(2)
+# oids = sub_df.index.get_level_values(3)
+# pred_tdf = st.getTourneyStats(sub_df.append(s2_df), sdf)
+# b2021 = Bracket(2021)
 
 #%%
 print('Loading models...')
-pred_feats = st.merge(st_df, pred_tdf)
-p_df = (rescale(pred_feats, scale) - mu_sc) / std_sc
-pred_1 = st.getMatches(sub_df, p_df, diff=True).astype(np.float32)
+# pred_feats = st.merge(st_df, pred_tdf)
+# p_df = (rescale(pred_feats, scale) - mu_sc) / std_sc
+# pred_1 = st.getMatches(sub_df, p_df, diff=True).astype(np.float32)
           
 brackets = dict(zip(np.arange(2012, 2020), 
                     [Bracket(n, True) for n in np.arange(2012, 2020)]))
@@ -93,97 +104,131 @@ brackets = dict(zip(np.arange(2012, 2020),
 #%%
 print('Running fitting and predictions...')
 targets = tdf_t[ml_df.index]
-mdl_res = pd.DataFrame(columns=['season', 'param1', 'param2', 'kernel', 'espn', 'loss', 'acc'])
-idx = 0
+mdl_df = pd.DataFrame()
+
 #Sets of kernels with individual hyperparam optimization
-print('DotProduct')
-for sig0 in np.linspace(.1, 20, 20):
-    print(f'sig0: {sig0}\tbounds:', end='')
-    print(sigbounds)
-    for Xt, Xs, yt, ys, season in seasonalCV(ml_df, targets):
-        model = kerasWrapper(GaussianProcessClassifier(kernel = kernels.DotProduct(sigma_0=sig0,
-                                                                  sigma_0_bounds=(1e-18, 1e11))))
-        model.fit(Xt, yt)
-        pred = brackets[season].run(model, merge_df, scaling=None)
-        print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}\n'.format(season, 
-                                                        brackets[season].espn_score, 
-                                                        brackets[season].loss, 
-                                                        brackets[season].accuracy))
-        mdl_res.loc[idx, ['season', 'param1', 'kernel', 'espn', 'loss', 'acc']] = \
-            [season, sig0, 'dp', 
-             brackets[season].espn_score, 
-             brackets[season].loss, brackets[season].accuracy]
-        idx += 1
-            
+    
+def rbf_iter(L, x):
+    Xt, Xs, yt, ys = splitSeason(ml_df, targets, x[1])
+    model = kerasWrapper(GaussianProcessClassifier(kernel=kernels.RBF(length_scale=x[0],
+                                                                      length_scale_bounds=(1e-11, 1e11))))
+    model.fit(Xt, yt)
+    brackets[x[1]].run(model, merge_df, scaling=None)
+    L.append([x[1], x[0], None, 'rbf', 
+         brackets[x[1]].espn_score, 
+         brackets[x[1]].loss, brackets[x[1]].accuracy])
+    
+def dp_iter(L, x):
+    Xt, Xs, yt, ys = splitSeason(ml_df, targets, x[1])
+    model = kerasWrapper(GaussianProcessClassifier(kernel=kernels.DotProduct(sigma_0=x[0],
+                                                                      sigma_0_bounds=(1e-11, 1e11))))
+    model.fit(Xt, yt)
+    brackets[x[1]].run(model, merge_df, scaling=None)
+    L.append([x[1], x[0], None, 'dp', 
+         brackets[x[1]].espn_score, 
+         brackets[x[1]].loss, brackets[x[1]].accuracy])
+    
+def white_iter(L, x):
+    Xt, Xs, yt, ys = splitSeason(ml_df, targets, x[1])
+    model = kerasWrapper(GaussianProcessClassifier(kernel=kernels.WhiteKernel(noise_level=x[0],
+                                                                      noise_level_bounds=(1e-11, 1e11))))
+    model.fit(Xt, yt)
+    brackets[x[1]].run(model, merge_df, scaling=None)
+    L.append([x[1], x[0], None, 'white', 
+         brackets[x[1]].espn_score, 
+         brackets[x[1]].loss, brackets[x[1]].accuracy])
+    
+def mat_iter(L, x):
+    Xt, Xs, yt, ys = splitSeason(ml_df, targets, x[2])
+    model = kerasWrapper(GaussianProcessClassifier(kernel=kernels.Matern(length_scale=x[0],
+                                                                      length_scale_bounds=(1e-11, 1e11),
+                                                                      nu=x[1])))
+    model.fit(Xt, yt)
+    brackets[x[2]].run(model, merge_df, scaling=None)
+    L.append([x[2], x[0], x[1], 'matern', 
+         brackets[x[2]].espn_score, 
+         brackets[x[2]].loss, brackets[x[2]].accuracy])
+
+#%%
 print('RBF')
-for ls in np.linspace(.1, 20, 20):
-    print(f'ls: {ls}\tbounds:', end='')
-    for Xt, Xs, yt, ys, season in seasonalCV(ml_df, targets):
-        model = kerasWrapper(GaussianProcessClassifier(kernel = kernels.RBF(length_scale=ls)))
-        model.fit(Xt, yt)
-        pred = brackets[season].run(model, merge_df, scaling=None)
-        print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}\n'.format(season, 
-                                                        brackets[season].espn_score, 
-                                                        brackets[season].loss, 
-                                                        brackets[season].accuracy))
-        mdl_res.loc[idx, ['season', 'param1', 'kernel', 'espn', 'loss', 'acc']] = \
-            [season, ls, 'rbf', 
-             brackets[season].espn_score, 
-             brackets[season].loss, brackets[season].accuracy]
-        idx += 1
-        
+mdl_res = []
+func_iter = [(n, season) for n in np.linspace(.01, 15, 20) \
+             for season in np.arange(2012, 2020)]
+    
+with mp.Manager() as man:
+    mdl_res = man.list()
+    processes = []
+    for f in func_iter:
+        p = mp.Process(target=rbf_iter, args=(mdl_res, f,))
+        processes.append(p)
+        p.start()
+    for proc in processes:
+        proc.join()
+    mdl_res = list(mdl_res)
+    
+mdl_df = mdl_df.append(pd.DataFrame(columns=['season', 'param1', 'param2', 'type', 'espn', 'loss', 'acc'],
+                      data=mdl_res).set_index(['season', 'param1', 'param2', 'type']))
+
+#%%
+print('DotProduct')
+mdl_res = []
+func_iter = [(n, season) for n in np.linspace(.01, 15, 20) \
+             for season in np.arange(2012, 2020)]
+    
+with mp.Manager() as man:
+    mdl_res = man.list()
+    processes = []
+    for f in func_iter:
+        p = mp.Process(target=dp_iter, args=(mdl_res, f,))
+        processes.append(p)
+        p.start()
+    for proc in processes:
+        proc.join()
+    mdl_res = list(mdl_res)
+    
+mdl_df = mdl_df.append(pd.DataFrame(columns=['season', 'param1', 'param2', 'type', 'espn', 'loss', 'acc'],
+                      data=mdl_res).set_index(['season', 'param1', 'param2', 'type']))
+
+#%%
 print('White')
-for nl in np.linspace(.1, 20, 20):
-    print(f'ls: {ls}\tbounds:', end='')
-    for Xt, Xs, yt, ys, season in seasonalCV(ml_df, targets):
-        model = kerasWrapper(GaussianProcessClassifier(kernel = kernels.WhiteKernel(noise_level=nl)))
-        model.fit(Xt, yt)
-        pred = brackets[season].run(model, merge_df, scaling=None)
-        print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}\n'.format(season, 
-                                                        brackets[season].espn_score, 
-                                                        brackets[season].loss, 
-                                                        brackets[season].accuracy))
-        mdl_res.loc[idx, ['season', 'param1', 'kernel', 'espn', 'loss', 'acc']] = \
-            [season, nl, 'white', 
-             brackets[season].espn_score, 
-             brackets[season].loss, brackets[season].accuracy]
-        idx += 1
-        
+mdl_res = []
+func_iter = [(n, season) for n in np.linspace(.01, 15, 20) \
+             for season in np.arange(2012, 2020)]
+    
+with mp.Manager() as man:
+    mdl_res = man.list()
+    processes = []
+    for f in func_iter:
+        p = mp.Process(target=white_iter, args=(mdl_res, f,))
+        processes.append(p)
+        p.start()
+    for proc in processes:
+        proc.join()
+    mdl_res = list(mdl_res)
+    
+mdl_df = mdl_df.append(pd.DataFrame(columns=['season', 'param1', 'param2', 'type', 'espn', 'loss', 'acc'],
+                      data=mdl_res).set_index(['season', 'param1', 'param2', 'type']))
+
+#%%
+
 print('Matern')
-for ls in np.linspace(.1, 20, 20):
-    for nu in [.5, 1.5, 2.5, np.inf]:
-        print(f'ls: {ls}\tbounds:', end='')
-        for Xt, Xs, yt, ys, season in seasonalCV(ml_df, targets):
-            model = kerasWrapper(GaussianProcessClassifier(kernel = kernels.Matern(length_scale=ls, 
-                                                                                   nu=nu)))
-            model.fit(Xt, yt)
-            pred = brackets[season].run(model, merge_df, scaling=None)
-            print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}\n'.format(season, 
-                                                            brackets[season].espn_score, 
-                                                            brackets[season].loss, 
-                                                            brackets[season].accuracy))
-            mdl_res.loc[idx, ['season', 'param1', 'param2', 'kernel', 'espn', 'loss', 'acc']] = \
-                [season, ls, nu, 'matern', 
-                 brackets[season].espn_score, 
-                 brackets[season].loss, brackets[season].accuracy]
-            idx += 1
-            
-#%%
-b2021.run(m, p_df, scaling=scale)
-b2021.printTree('./submissions/tree' + runID + '_{}.txt'.format(idx), val_str = val_str)
-subs['Pred'] = sub_df['T_Win%'].values
-subs.to_csv('./submissions/sub' + runID + '_{}.csv'.format(idx), index=False)
+mdl_res = []
+func_iter = [(n, season) for n in np.linspace(.01, 15, 20) \
+             for nu in [.5, 1.5, 2.5, np.inf] for season in np.arange(2012, 2020)]
+    
+with mp.Manager() as man:
+    mdl_res = man.list()
+    processes = []
+    for f in func_iter:
+        p = mp.Process(target=mat_iter, args=(mdl_res, f,))
+        processes.append(p)
+        p.start()
+    for proc in processes:
+        proc.join()
+    mdl_res = list(mdl_res)
+    
+mdl_df = mdl_df.append(pd.DataFrame(columns=['season', 'param1', 'param2', 'type', 'espn', 'loss', 'acc'],
+                      data=mdl_res).set_index(['season', 'param1', 'param2', 'type']))
 
 #%%
-#Double checking on tournament scores in our validation years
-print('\nScores for validation years:')
-for idx, m in enumerate(models):
-    print(f'Model {idx}')
-    print('\t\tESPN\t\tLogLoss\t\tAcc.')
-    for season in [2018, 2019]:
-        br = Bracket(season, True)
-        br.run(m, merge_df, scaling=scale)
-        print('{}\t\t{}\t\t{:.2f}\t\t\t{:.2f}'.format(season, br.espn_score, br.loss, br.accuracy))
-
-
-
+av_df = mdl_df.groupby(['param1', 'param2', 'type']).mean()

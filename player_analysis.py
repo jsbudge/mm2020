@@ -51,15 +51,15 @@ pdf = ev.getTeamRosters()
 #%%
 
 n_clusters = 10
-n_kpca_comps = 4
+n_kpca_comps = 20
 n_player_types = 5
-minbins = np.array([0, 5.55, 15.88, 30, 44])
+minbins = np.array([0, 5.55, 15.88, 30, 44]) #Chosen by empirical evidence - looking at a minutes distribution
 av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
 av_df = av_df.loc[np.logical_not(av_df.index.duplicated())]
 adv_df, phys_df, score_df, base_df = ev.splitStats(av_df, savdf, add_stats=['poss'],
                                                    minbins = minbins)
 
-ov_perc = adv_df.copy()
+ov_perc = adv_df.join(phys_df[['Weight', 'Height']])
 for idx, grp in ov_perc.groupby(['Season']):
     ov_perc.loc[grp.index] = (grp - grp.mean()) / grp.std()
 ov_perc = ov_perc.sort_index()
@@ -67,13 +67,14 @@ ov_perc = ov_perc.sort_index()
     
 print('Running scoring algorithms...')
 
-#ov_perc[['FoulPer18', 'TOPer18']] = -ov_perc[['FoulPer18', 'TOPer18']]
-stat_cats = TruncatedSVD(n_components=n_clusters)
-merge_df = pd.DataFrame(data=stat_cats.fit_transform(ov_perc.drop(columns=['SoS'])),
-                        columns=['comp_{}'.format(n) for n in range(n_clusters)],
-                        index=ov_perc.index)
+#Removing the benchwarmers as they make the stats unstable
+merge_df = ov_perc.loc[phys_df['MinPerc'] > 1] 
+
+#This normalizes the stats so they're all on the same scale
 for idx, grp in merge_df.groupby(['Season']):
     merge_df.loc[grp.index] = (grp - grp.mean()) / grp.std()
+    
+#An attempt to create an all-in-one offense and defense score
 m_cov = merge_df.join(savdf[['T_OffRat', 'T_DefRat']], on=['Season', 
                                     'TID']).cov()
 cov_cols = [col for col in m_cov.columns if 'T_' not in col]
@@ -92,34 +93,19 @@ aug_df['OverallScore'] = (aug_df['OffScore'] + aug_df['DefScore'] + 3) * adv_df[
 aug_df['BalanceScore'] = 1 / abs(aug_df['OffScore'] - aug_df['DefScore'])**(1/2)
 
 #CLUSTERING TO FIND PLAYER TYPES
-kpca = KernelPCA(n_components=n_kpca_comps)
+kpca = TruncatedSVD(n_components=n_kpca_comps)
 
-for min_class in list(set(phys_df['MinPerc'].values)):
-    tmp_df = merge_df.loc[phys_df['MinPerc'] == min_class]
+for min_class in list(set(phys_df['Pos'].values)):
+    tmp_df = merge_df.loc[phys_df['Pos'] == min_class]
     pca_df = pd.DataFrame(index=tmp_df.index, data=kpca.fit_transform(tmp_df))
     cat_perc = pca_df.copy()
+    
     print('Applying clustering...')
-    n_types = n_player_types
     clalg = cl.Birch(n_clusters=n_player_types, threshold=0.44, branching_factor=45)
     cat = clalg.fit_predict(pca_df)
-    shape_sz = pca_df.shape[0]
-    big_cat = Counter(cat)
-    #Get number of clusters that best distinguishes between players
-    def min_func(x):
-        clalg = cl.Birch(n_clusters=n_player_types, threshold=x[0], branching_factor=int(x[1]))
-        cat = clalg.fit_predict(pca_df)
-        big_cat = Counter(cat)
-        return np.linalg.norm([big_cat[t] - shape_sz for t in big_cat])
-    
-    for n in range(len(list(set(clalg.labels_)))):
-        cptmp = pca_df.loc[cat == n]
-        cat_perc.loc[cat == n] = (cptmp - cptmp.mean()) / cptmp.std()
     aug_df.loc[tmp_df.index, 'Cat'] = cat
-    aug_df.loc[tmp_df.index, 'CatScore'] = np.sum(cat_perc, axis=1)
-    aug_df.loc[tmp_df.index, 'CatScore'] = \
-        norm.cdf((aug_df.loc[tmp_df.index, 'CatScore'] - \
-          aug_df.loc[tmp_df.index, 'CatScore'].mean()) / \
-         aug_df.loc[tmp_df.index, 'CatScore'].std()) * 100
+    
+#Set the scores from 0-100ish because that makes it more intuitive
 adv_df = adv_df.join(aug_df)
 for idx, grp in adv_df.groupby(['Season']):
     for col in adv_df.columns:
@@ -144,47 +130,13 @@ for idx, grp in adv_df.groupby(['Season', 'TID']):
                                                                             weights=phys_df.loc[grp.index, 'MinsPerGame'].values)]
 if save_to_csv:
     ts_df.to_csv('./data/PlayerAnalysisData.csv')
-        
-#%%
-#Some example players from each segment of MinPerc
-
-exdf = adv_df.merge(phys_df['MinPerc'], on=['Season', 'PlayerID', 'TID']).reset_index()
-ex_players = pd.DataFrame()
-best_players = pd.DataFrame()
-for idx, grp in exdf.groupby(['MinPerc', 'Cat']):
-    vals = grp.drop(columns = [col for col in grp.columns if 'Score' in col] + \
-                    ['Season', 'PlayerID', 'TID', 'Cat', 'MinPerc'])
-    vals = (vals - vals.mean()) / vals.std()
-    dists = np.linalg.norm(vals.fillna(0), axis=1)
-    player = grp.loc[dists == dists.min()]
-    if player['PlayerID'].values[0] > 0:
-        pid = pdf.loc[player['PlayerID'], 'FullName'].values[0]
-        ex_players = ex_players.append(pd.DataFrame(list(player.values.flatten()) + \
-                                                    [pid]).T)
-    player = grp.loc[grp['CatScore'] == grp['CatScore'].max()]
-    if player['PlayerID'].values[0] > 0:
-        pid = pdf.loc[player['PlayerID'], 'FullName'].values[0]
-        best_players = best_players.append(pd.DataFrame(list(player.values.flatten()) + \
-                                                    [pid]).T)
-ex_players.columns = list(exdf.columns) + ['PlayerName']
-ex_players = ex_players.set_index(['MinPerc', 'Cat'])
-best_players.columns = list(exdf.columns) + ['PlayerName']
-best_players = best_players.set_index(['MinPerc', 'Cat'])
     
         
 #%%
 
-plt_df = adv_df.loc[phys_df['MinPerc'] == 4, ['Cat', 'DWS', 'OWS',
-                               'DefScore', 'OffScore', 'BalanceScore']]
-plt_df = plt_df.loc(axis=0)[season, :, :]
+plt_df = adv_df[['Cat', 'OverallScore', 'DWS', 'OWS', 'WEcon']].join(phys_df[['Pos']])
+plt_df = plt_df.loc[plt_df['Pos'] == 1].dropna()
 plt_df = plt_df.loc[plt_df['Cat'] != -1]
 pg = sns.PairGrid(plt_df, hue='Cat', palette=sns.husl_palette(len(list(set(plt_df['Cat'])))))
 pg.map_lower(sns.scatterplot)
-pg.map_diag(sns.kdeplot)
-
-#%%
-
-tourn_df = ts_df.merge(adv_tdf, on=['Season', 'TID'])[['T_FinalRank', 'DefScoreW', 'OffScoreW', 'OverallScoreW', 'T_RoundRank', 'T_FinalElo', 'T_Seed', 'CatScoreW']]
-pg = sns.PairGrid(tourn_df, hue='T_RoundRank', palette=sns.husl_palette(len(list(set(tourn_df['T_RoundRank'])))))
-pg.map_lower(sns.scatterplot, size=tourn_df['T_RoundRank'])
 pg.map_diag(sns.kdeplot)

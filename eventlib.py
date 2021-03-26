@@ -452,6 +452,7 @@ Returns:
 def splitStats(df, sdf, add_stats=[], minbins=None):
     df.loc[df['GP'] == 0, 'GP'] = 1
     df.loc[df['FGA'] == 0, 'FGA'] = 1
+    df.loc[df['Mins'] == 0, 'Mins'] = 1
     df['MinsPerGame'] = df['Mins'] / df['GP']
     if minbins is not None:
         if type(minbins) == int:
@@ -466,6 +467,7 @@ def splitStats(df, sdf, add_stats=[], minbins=None):
                  'Stl%', '3/2Rate', 'FG3%', 'R%', 'TS%', 'TO%', 'FG2%', 'Usage%',
                  'WS']].copy()
     adv_df['Econ'] = (df['Ast'] + df['Stl'] - df['TO']).values
+    adv_df['WEcon'] = ((df['Ast'] + df['Stl'] - df['TO']) / df['Mins']).values
     adv_df['PPS'] = ((df['Pts'] - df['FTM']) / df['FGA']).values
     adv_df['GameSc'] = (40 * df['eFG%'] + 2 * df['R%'] + 15 * df['FT/A'] + 25 - 2.5 * df['TO%']).values
     adv_df['SoS'] = mdf['T_SoS'].values

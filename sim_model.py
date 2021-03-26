@@ -25,6 +25,7 @@ from sklearn.preprocessing import StandardScaler, PowerTransformer, OneHotEncode
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.covariance import oas
+from sklearn.metrics import log_loss
 import matplotlib.pyplot as plt
 from tourney import Bracket
 from datetime import datetime
@@ -47,15 +48,17 @@ scale = StandardScaler()
 
 #%%
 
+df1 = df1.drop(columns=['T_Score'])
+df2 = df2.drop(columns=['T_Score'])
 scale.fit(df1)
 df1 = rescale(df1, scale)
 df2 = rescale(df2, scale)
 
-tsvd = TruncatedSVD(n_components=30)
-tsvd.fit(df2)
+# tsvd = TruncatedSVD(n_components=30)
+# tsvd.fit(df2)
 
-df1 = pd.DataFrame(index=df1.index, data=tsvd.transform(df1))
-df2 = pd.DataFrame(index=df2.index, data=tsvd.transform(df2))
+# df1 = pd.DataFrame(index=df1.index, data=tsvd.transform(df1))
+# df2 = pd.DataFrame(index=df2.index, data=tsvd.transform(df2))
 
 ml_df = df1 - df2
 
@@ -74,25 +77,26 @@ rfc.fit(Xt, yt)
 
 #%%
 
-k_mu = df1.groupby(['Season', 'TID']).apply(lambda x: np.average(x, axis=0, weights=np.arange(x.shape[0])**2))
+k_mu = st.getSeasonalStats(df1, strat='mean', av_only=True)
 k_std = pd.DataFrame(index=k_mu.index, columns=['COV'])
 for idx, grp in df1.groupby(['Season', 'TID']):
     k_std.loc[idx, 'COV'] = oas(grp)[0]
 
 #%%
 print('Running simulations...')
+n_sims = 500
 
 def sim_games(x):
     idx, row = x
     t_mu = k_mu.loc[(idx[1], idx[2])]
     t_cov = k_std.loc[(idx[1], idx[2])][0]
-    t_gen = np.random.multivariate_normal(t_mu, t_cov, 100)
+    t_gen = np.random.multivariate_normal(t_mu, t_cov, n_sims)
     o_mu = k_mu.loc[(idx[1], idx[3])]
     o_cov = k_std.loc[(idx[1], idx[3])][0]
-    o_gen = np.random.multivariate_normal(o_mu, o_cov, 100)
+    o_gen = np.random.multivariate_normal(o_mu, o_cov, n_sims)
     res = rfc.predict(t_gen - o_gen)
-    return [sum(res) / 100, names[idx[2]], 
-            1 - sum(res) / 100, names[idx[3]]]
+    return [sum(res) / n_sims, names[idx[2]], 
+            1 - sum(res) / n_sims, names[idx[3]]]
     
     
 names = st.loadTeamNames()
@@ -102,7 +106,7 @@ sim_res = pd.DataFrame(index=tdf.index,
                        columns=['T%', 'TName', 'O%', 'OName'],
                        data=proc.map(sim_games, [(idx, row) for idx, row in tdf.iterrows()]))
 #%%
-n_sims = 400
+
 subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
 sub_df = pd.DataFrame(columns=['GameID'], data=np.arange(subs.shape[0]),
                       dtype=int)
@@ -116,7 +120,7 @@ sub_df = sub_df.set_index(['GameID', 'Season', 'TID', 'OID'])
 s2_df = s2_df.set_index(['GameID', 'Season', 'TID', 'OID'])
 sub_df['Pivot'] = 1; s2_df['Pivot'] = 1
     
-sim_res = pd.DataFrame(index=tdf.index, columns=['T%', 'TName', 'O%', 'OName'])
+#sim_res = pd.DataFrame(index=tdf.index, columns=['T%', 'TName', 'O%', 'OName'])
 for idx, row in sub_df.append(s2_df).iterrows():
     t_mu = k_mu.loc[(idx[1], idx[2])]
     t_cov = k_std.loc[(idx[1], idx[2])][0]
@@ -128,7 +132,13 @@ for idx, row in sub_df.append(s2_df).iterrows():
     sim_res.loc[idx, ['T%', 'TName', 'O%', 'OName']] = [1 - sum(res) / n_sims, names[idx[2]], 
                                                         sum(res) / n_sims, names[idx[3]]]
 
-sim_res = sim_res.dropna()
+print('Metrics on known tournament games:')
+print('Year \t\tLogLoss\t\tAcc.')
+for idx, grp in tdf_t.groupby(['Season']):
+    logloss = log_loss(grp, sim_res.loc[grp.index, 'T%'])
+    acc = sum(grp == (sim_res.loc[grp.index, 'T%'] > .5)) / grp.shape[0]
+    print('{}:\t\t{:.2f}\t\t\t{:.2f}%'.format(idx, logloss, acc * 100))
+
 
 #%%
 sim_check = sim_res.drop(columns=['TName', 'OName'])

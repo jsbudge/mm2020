@@ -40,7 +40,6 @@ def getPlayerData(team, rosters, games, df, season=2017):
 def getTeamRosterData(team, rosters, games, df, season):
     return df.loc(axis=0)[season, getPlayerData(team, rosters, games, df, season)]
         
-season = 2016
 save_to_csv = False
 print('Loading player data...')
 sdf = st.arrangeFrame(scaling=None, noinfluence=True)[0]
@@ -50,19 +49,15 @@ adv_tdf = st.getTourneyStats(tdf, sdf)
 pdf = ev.getTeamRosters()
 #%%
 
-n_clusters = 10
-n_kpca_comps = 20
-n_player_types = 5
+n_kpca_comps = 30
+n_player_types = 8
 minbins = np.array([0, 5.55, 15.88, 30, 44]) #Chosen by empirical evidence - looking at a minutes distribution
 av_df = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
 av_df = av_df.loc[np.logical_not(av_df.index.duplicated())]
 adv_df, phys_df, score_df, base_df = ev.splitStats(av_df, savdf, add_stats=['poss'],
                                                    minbins = minbins)
 
-ov_perc = adv_df.join(phys_df[['Weight', 'Height']])
-for idx, grp in ov_perc.groupby(['Season']):
-    ov_perc.loc[grp.index] = (grp - grp.mean()) / grp.std()
-ov_perc = ov_perc.sort_index()
+ov_perc = adv_df.sort_index()
 #%%
     
 print('Running scoring algorithms...')
@@ -71,8 +66,9 @@ print('Running scoring algorithms...')
 merge_df = ov_perc.loc[phys_df['MinPerc'] > 1] 
 
 #This normalizes the stats so they're all on the same scale
-for idx, grp in merge_df.groupby(['Season']):
-    merge_df.loc[grp.index] = (grp - grp.mean()) / grp.std()
+scale = PowerTransformer()
+merge_df = pd.DataFrame(index=merge_df.index, columns=merge_df.columns,
+                        data=scale.fit_transform(merge_df))
     
 #An attempt to create an all-in-one offense and defense score
 m_cov = merge_df.join(savdf[['T_OffRat', 'T_DefRat']], on=['Season', 
@@ -119,24 +115,51 @@ for idx, grp in adv_df.groupby(['Season']):
 #%%
 
 print('Getting team scoring data...')
+valid_adv_df = adv_df.dropna()
 ts_cols = [col for col in adv_df.columns if 'Score' in col] + \
     [col + 'W' for col in adv_df.columns if 'Score' in col]
 ts_df = pd.DataFrame(index=adv_df.groupby(['Season', 'TID']).mean().index,
                      columns=ts_cols).astype(np.float)
-for idx, grp in adv_df.groupby(['Season', 'TID']):
-    for col in adv_df.columns:
+for idx, grp in valid_adv_df.groupby(['Season', 'TID']):
+    for col in valid_adv_df.columns:
         if 'Score' in col:
-            ts_df.loc[idx, [col, col + 'W']] = [grp[col].mean(), np.average(grp[col], 
-                                                                            weights=phys_df.loc[grp.index, 'MinsPerGame'].values)]
+            ts_df.loc[idx, [col, col + 'W']] = [grp[col].mean(), 
+                                                np.average(grp[col], 
+                                                           weights=phys_df.loc[grp.index, 'MinsPerGame'].values)]
+            ts_df.loc[idx, ['Min' + col, 'Max' + col]] = [grp[col].min(), 
+                                                          grp[col].max()]
+    ts_df.loc[idx, 'Height'] = np.average(phys_df.loc[grp.index, 'Height'].values, 
+                                          weights=phys_df.loc[grp.index, 'MinsPerGame'].values)
+    ts_df.loc[idx, 'Weight'] = np.average(phys_df.loc[grp.index, 'Weight'].values, 
+                                          weights=phys_df.loc[grp.index, 'MinsPerGame'].values)
+    bmi = phys_df.loc[grp.index, 'Weight'].values * .454 / (phys_df.loc[grp.index, 'Height'].values * .0254)**2
+    ts_df.loc[idx, 'BMI'] = np.average(bmi, 
+                                       weights=phys_df.loc[grp.index, 'MinsPerGame'].values)
 if save_to_csv:
     ts_df.to_csv('./data/PlayerAnalysisData.csv')
     
+#%%
+for season in np.arange(2012, 2022):
+    spdf = valid_adv_df.loc(axis=0)[season, :, :]
+    spdf = spdf.loc(axis=0)[:, spdf.index.get_level_values(1) > 0, :]
+    bop = spdf.loc[spdf['OffScore'] == spdf['OffScore'].max()].index.get_level_values(1).values[0]
+    bdp = spdf.loc[spdf['DefScore'] == spdf['DefScore'].max()].index.get_level_values(1).values[0]
+    bbp = spdf.loc[spdf['BalanceScore'] == spdf['BalanceScore'].max()].index.get_level_values(1).values[0]
+    bovp = spdf.loc[spdf['OverallScore'] == spdf['OverallScore'].max()].index.get_level_values(1).values[0]
+    print('Best players for {}:\n'.format(season))
+    print('Offensive:\t' + pdf.loc[bop, 'FullName'])
+    print('Defensive:\t' + pdf.loc[bdp, 'FullName'])
+    print('Balance:\t' + pdf.loc[bbp, 'FullName'])
+    print('Overall:\t' + pdf.loc[bovp, 'FullName'])
+    print('')
         
 #%%
 
-plt_df = adv_df[['Cat', 'OverallScore', 'DWS', 'OWS', 'WEcon']].join(phys_df[['Pos']])
-plt_df = plt_df.loc[plt_df['Pos'] == 1].dropna()
-plt_df = plt_df.loc[plt_df['Cat'] != -1]
-pg = sns.PairGrid(plt_df, hue='Cat', palette=sns.husl_palette(len(list(set(plt_df['Cat'])))))
-pg.map_lower(sns.scatterplot)
-pg.map_diag(sns.kdeplot)
+plt_df = adv_df[['Cat', 'OverallScore', 'DWS', 'OWS', 'WEcon']]
+for pos in [1, 3, 5]:
+    plt_df = adv_df[['Cat', 'OverallScore', 'DWS', 'OWS', 'WEcon']].loc[phys_df['Pos'] == pos].dropna()
+    plt_df = plt_df.loc[plt_df['Cat'] != -1]
+    pg = sns.PairGrid(plt_df, hue='Cat', palette=sns.husl_palette(plt_df['Cat'].max()+1))
+    pg.map_lower(sns.scatterplot)
+    pg.map_diag(sns.kdeplot)
+    plt.title('Pos {}'.format(pos))

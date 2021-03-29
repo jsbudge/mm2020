@@ -151,7 +151,7 @@ for idx, grp in valid_adv_df.groupby(['Season', 'TID']):
                 np.average(grp.loc[posgrp['Pos'] == pos, 'OverallScore'].values, 
                            weights=posgrp.loc[posgrp['Pos'] == pos, 'MinsPerGame'].values)
         else:
-            ts_df.loc[idx, 'Pos{}Q'.format(pos)] = 0
+            ts_df.loc[idx, 'Pos{}Q'.format(int(pos))] = 0
 if save_to_csv:
     ts_df.to_csv('./data/PlayerAnalysisData.csv')
     

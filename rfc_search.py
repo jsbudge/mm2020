@@ -134,7 +134,7 @@ def bag_iter(L, x):
 #%%
 print('RFC')
 mdl_res = []
-func_iter = [(n, crit, season) for n in np.arange(50, 1500, 100) \
+func_iter = [(n, crit, season) for n in np.arange(50, 1500, 400) \
              for crit in ['gini', 'entropy'] for season in np.arange(2012, 2020)]
     
 with mp.Manager() as man:
@@ -154,7 +154,7 @@ mdl_df = mdl_df.append(pd.DataFrame(columns=['season', 'param1', 'param2', 'type
 #%%
 print('Ada')
 mdl_res = []
-func_iter = [(n, crit, season) for n in np.arange(50, 1500, 100) \
+func_iter = [(n, crit, season) for n in np.arange(50, 1500, 400) \
              for crit in [1e-5, 1e-4, 1e-2] for season in np.arange(2012, 2020)]
     
 with mp.Manager() as man:

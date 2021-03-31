@@ -50,7 +50,7 @@ sdf = st.arrangeFrame(scaling=None, noinfluence=True)[0]
 savdf = st.getSeasonalStats(sdf, strat='relelo')
 tdf = st.arrangeTourneyGames()[0]
 adv_tdf = st.getTourneyStats(tdf, sdf)
-pdf = ev.getTeamRosters()
+pdf = pd.read_csv('./data/InternetPlayerNames.csv').set_index(['Season', 'PlayerID']).sort_index()
 scale = PowerTransformer()
 #%%
 
@@ -158,16 +158,27 @@ if save_to_csv:
 #%%
 for season in np.arange(2012, 2022):
     spdf = valid_adv_df.loc(axis=0)[season, :, :]
-    spdf = spdf.loc(axis=0)[:, spdf.index.get_level_values(1) > 0, :]
+    posgrp = phys_df.loc[spdf.index, ['Pos']]
+    #spdf = spdf.loc(axis=0)[:, spdf.index.get_level_values(1) > 0, :]
     bop = spdf.loc[spdf['OffScore'] == spdf['OffScore'].max()].index.get_level_values(1).values[0]
     bdp = spdf.loc[spdf['DefScore'] == spdf['DefScore'].max()].index.get_level_values(1).values[0]
     bbp = spdf.loc[spdf['BalanceScore'] == spdf['BalanceScore'].max()].index.get_level_values(1).values[0]
     bovp = spdf.loc[spdf['OverallScore'] == spdf['OverallScore'].max()].index.get_level_values(1).values[0]
+    b5 = spdf.loc[posgrp['Pos'] == 5]
+    b5 = b5.loc[b5['OverallScore'] == b5['OverallScore'].max()].index.get_level_values(1).values[0]
+    b3 = spdf.loc[posgrp['Pos'] == 3]
+    b3 = b3.loc[b3['OverallScore'] == b3['OverallScore'].max()].index.get_level_values(1).values[0]
+    b1 = spdf.loc[posgrp['Pos'] == 1]
+    b1 = b1.loc[b1['OverallScore'] == b1['OverallScore'].max()].index.get_level_values(1).values[0]
     print('Best players for {}:\n'.format(season))
-    print('Offensive:\t' + pdf.loc[bop, 'FullName'])
-    print('Defensive:\t' + pdf.loc[bdp, 'FullName'])
-    print('Balance:\t' + pdf.loc[bbp, 'FullName'])
-    print('Overall:\t' + pdf.loc[bovp, 'FullName'])
+    print('Offensive:\t' + pdf.loc(axis=0)[season, bop]['PlayerName'].values[0])
+    print('Defensive:\t' + pdf.loc(axis=0)[season, bdp]['PlayerName'].values[0])
+    print('Balance:\t\t' + pdf.loc(axis=0)[season, bbp]['PlayerName'].values[0])
+    print('Overall:\t\t' + pdf.loc(axis=0)[season, bovp]['PlayerName'].values[0])
+    print('Position players')
+    print('Center:\t' + pdf.loc(axis=0)[season, b5]['PlayerName'].values[0])
+    print('Forward:\t' + pdf.loc(axis=0)[season, b3]['PlayerName'].values[0])
+    print('Guard:\t' + pdf.loc(axis=0)[season, b1]['PlayerName'].values[0])
     print('')
         
 #%%

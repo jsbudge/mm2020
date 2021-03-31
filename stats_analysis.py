@@ -65,7 +65,7 @@ def getAllAverages(tid):
         
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 avs = {}
-m_types = ['relelo', 'gausselo', 'elo', 'rank', 'mest', 'mean', 'recent']
+m_types = ['relelo', 'elo', 'rank', 'mest', 'recent']
 for m in tqdm(m_types):
     avs[m] = st.getSeasonalStats(sdf, strat=m)
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
@@ -90,18 +90,16 @@ inf_df['ExpScDiff'] = exp_score.groupby(['Season', 'TID']).mean()
 #%%
 scale = StandardScaler()
 cong_df = st.merge(inf_df, tsdf, *[avs[m] for m in m_types]).dropna()
-cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(cong_df))
+cong_df = pd.DataFrame(index=cong_df.index, columns=cong_df.columns, data=scale.fit_transform(cong_df))
 tvsd = TruncatedSVD(n_components=250)
 
-cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(tvsd.fit_transform(cong_df)))
+#cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(tvsd.fit_transform(cong_df)))
 tdf_diff = st.getMatches(tdf, cong_df, diff=True)
 
 #%%
 ntdiff = tdf_diff.dropna()
 #ntdiff = ntdiff.loc[ntdiff.index.get_level_values(0).duplicated(keep='last')]
 scores = tdf.loc[ntdiff.index, 'T_Score'] - tdf.loc[ntdiff.index, 'O_Score']
-for s, grp in ntdiff.groupby(['Season']):
-    ntdiff.loc[grp.index] = (grp - grp.mean()) / grp.std()
 
 #Grouping together using mutual information and correlation metrics
 print('Getting Information Stats...')

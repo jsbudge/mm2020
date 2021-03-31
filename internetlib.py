@@ -26,7 +26,7 @@ seas_map = {'2011-12': 2012,
                                         '2018-19': 2019, '2019-20': 2020,
                                         '2020-21': 2021, '2021-2022': 2022}
 
-def getPlayerData(seasons=None, add_to_existing=True):
+def getPlayerData(seasons=None, add_to_existing=True, save_to_csv=True):
     pdf = ev.getTeamRosters()
     #Grab the data from sportsreference
     play_df = pd.DataFrame()
@@ -166,11 +166,17 @@ def getPlayerData(seasons=None, add_to_existing=True):
                    'PtsProd', 'Pos', 'Stl%', 'Stl', '3/2Rate', 'FGA3', 'FG3%', 'FGM3',
                    'R%', 'R', 'TS%', 'TO%', 'TO', 'FGA2', 'FG2%', 'FGM2', 'Usage%',
                    'Weight', 'WS', 'WSPer40']
-    if add_to_existing:
-        ipd = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
-        sdf = sdf.append(ipd)
+    if save_to_csv:
+        if add_to_existing:
+            ipd = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
+            sdf = sdf.append(ipd)
+        else:
+            sdf.to_csv('./data/InternetPlayerData.csv')
     else:
-        sdf.to_csv('./data/InternetPlayerData.csv')
+        if add_to_existing:
+            ipd = pd.read_csv('./data/InternetPlayerData.csv').set_index(['Season', 'PlayerID', 'TID']).sort_index()
+            sdf = sdf.append(ipd)
+        return sdf
         
 def getTeamSeasonalData(seasons=None, add_to_existing=True):
     #Grab the data from sportsreference

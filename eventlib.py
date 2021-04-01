@@ -432,7 +432,7 @@ def getAdvStats(df):
 splitStats
 Arranges internet data to be of most use.
 Inputs:
-    df - (DataFrame) Frame from internet data, generally taken from InternetPlayerData.csv.
+    df - (DataFrame) Frame of internet data, generally taken from InternetPlayerData.csv.
     sdf - (DataFrame) Frame of seasonal stats, from statslib's getSeasonalStats.
     add_stats - (list) List of additional options:
                             mins: Get stats adjusted for minutes played.
@@ -453,6 +453,7 @@ def splitStats(df, sdf, add_stats=[], minbins=None):
     df.loc[df['GP'] == 0, 'GP'] = 1
     df.loc[df['FGA'] == 0, 'FGA'] = 1
     df.loc[df['Mins'] == 0, 'Mins'] = 1
+    df.loc[df['WS'] == 0, 'WS'] = 1
     df['MinsPerGame'] = df['Mins'] / df['GP']
     if minbins is not None:
         if type(minbins) == int:
@@ -461,18 +462,33 @@ def splitStats(df, sdf, add_stats=[], minbins=None):
         else:
             cats = minbins
     df['MinPerc'] = np.digitize(df['MinsPerGame'], cats)
-    mdf = df.join(sdf[['T_SoS', 'T_Poss']], on=['Season', 'TID'])
+    mdf = df.join(sdf[['T_SoS', 'T_Poss', 'T_OffRat']], on=['Season', 'TID'])
+    phys_df = df[['Pos', 'Height', 'Weight', 'GP', 'GS', 'Mins', 'MinPerc', 'MinsPerGame']].copy()
+    phys_df['T_Poss'] = mdf['T_Poss'].values
+    adj_poss = mdf['T_Poss'] / 40 * phys_df['MinsPerGame']
+    adj_poss.loc[phys_df['MinsPerGame'] < 5] = 1
+    
     adv_df = df[['Ast%', 'Blk%', 'BPM', 'DBPM', 'DR%', 'DWS', 'eFG%', 'FG%', 
                  'FT/A', 'FT%', 'OBPM', 'OR%', 'OWS', 'PER', 'PtsProd',
                  'Stl%', '3/2Rate', 'FG3%', 'R%', 'TS%', 'TO%', 'FG2%', 'Usage%',
                  'WS']].copy()
+    #Econ - this is a EuroLeague stat to measure ballhandling
     adv_df['Econ'] = (df['Ast'] + df['Stl'] - df['TO']).values
+    #Econ, weighted for minutes played
     adv_df['WEcon'] = ((df['Ast'] + df['Stl'] - df['TO']) / df['Mins']).values
+    #Points Accounted for - that is, how many points this player should account for
+    #based on usage rate and team scoring ability
+    adv_df['PtsAcc'] = df['Pts'] / (phys_df['GP'] * adj_poss) * 100 - mdf['T_OffRat'] * df['Usage%'] / 100
+    adv_df['DWS%'] = df['DWS'] / df['WS']
+    adv_df['OWS%'] = df['OWS'] / df['WS']
+    adv_df['GS/P'] = df['GS'] / df['GP']
+    #Points per shot - essentially the same as Offensive Rating, but for players
     adv_df['PPS'] = ((df['Pts'] - df['FTM']) / df['FGA']).values
+    #GameScore - how good the player is at the Four Factors
     adv_df['GameSc'] = (40 * df['eFG%'] + 2 * df['R%'] + 15 * df['FT/A'] + 25 - 2.5 * df['TO%']).values
     adv_df['SoS'] = mdf['T_SoS'].values
-    phys_df = df[['Pos', 'Height', 'Weight', 'GP', 'GS', 'Mins', 'MinPerc', 'MinsPerGame']].copy()
-    phys_df['T_Poss'] = mdf['T_Poss'].values
+    
+    
     score_df = df[[col for col in df if 'Score' in col]].copy()
     base_df = df[[col for col in df if col not in adv_df.columns and col not in phys_df.columns and col not in score_df.columns]].drop(columns=['WSPer40'])
     
@@ -480,8 +496,6 @@ def splitStats(df, sdf, add_stats=[], minbins=None):
     if len(add_stats) > 0:
         adj_mins = phys_df['Mins'].values
         adj_mins[adj_mins < 5] = 5 #cutoff to avoid exploding numbers
-        adj_poss = mdf['T_Poss'] / 40 * phys_df['MinsPerGame']
-        adj_poss.loc[phys_df['MinsPerGame'] < 5] = 1
         for col in base_df:
             if 'FG' not in col and 'FT' not in col:
                 if 'mins' in add_stats:

@@ -65,14 +65,14 @@ def getAllAverages(tid):
         
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 avs = {}
-m_types = ['relelo', 'elo', 'rank', 'mest', 'recent']
+m_types = ['relelo', 'rank', 'mest', 'recent']
 for m in tqdm(m_types):
     avs[m] = st.getSeasonalStats(sdf, strat=m)
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
 pdf = ev.getTeamRosters()
 tsdf = pd.read_csv('./data/PlayerAnalysisData.csv').set_index(['Season', 'TID'])
 print('Scaling for influence...')
-inf_df = st.getInfluenceStats(sdf).set_index(['Season', 'TID'])
+inf_df = st.getInfluenceStats(sdf, recalc=False).set_index(['Season', 'TID'])
 
 
 #%%

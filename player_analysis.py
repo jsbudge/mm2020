@@ -221,3 +221,16 @@ plt_df['Cat'] = ((plt_df['Cat'] * cat_std) + cat_mu + 1).astype(int)
 for pos in [1, 3, 5]:
     plt.figure('Pos {}'.format(pos))
     sns.scatterplot(data=plt_df.loc[plt_df['Pos'] == pos].drop(columns=['Pos']).groupby(['Cat']).mean().T)
+    
+repdf = pdf.reset_index()
+cnt = 0
+for idx, grp in repdf.groupby(['PlayerName']):
+    repdf.loc[grp.index, 'PlayerID'] = cnt
+    cnt += 1
+    
+repdf = repdf.set_index(['Season', 'PlayerID'])
+
+for idx, row in av_df.iterrows():
+    av_df.loc[idx, 'PlayerID'] = mergedf.loc[mergedf['PlayerID_y'] == row['PlayerName'
+                
+                

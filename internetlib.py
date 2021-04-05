@@ -29,32 +29,14 @@ seas_map = {'2011-12': 2012,
 def getPlayerData(seasons=None, add_to_existing=True, save_to_csv=True):
     pdf = ev.getTeamRosters()
     #Grab the data from sportsreference
-    play_df = pd.DataFrame()
+    play_df = []
     if seasons is None:
         seasons = range(2012, 2022)
     for season in seasons:
         tm = Teams(season)
         for team in tqdm(tm):
             ros = team.roster
-            for play in ros.players:
-                if play_df.shape[0] > 0:
-                    if play.player_id not in play_df['player_id']:
-                        t = play.dataframe
-                        t = t.reset_index().fillna(0)
-                        t['level_0'] = t['level_0'].map(seas_map)
-                        t['PlayerName'] = play.name
-                        t['TNme'] = team.name
-                        play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
-                    else:
-                        play_df.loc[np.logical_and(play_df['player_id'] == play.player_id,
-                                                    play_df['level_0'] == season), 'TNme'] = team.name
-                else:
-                    t = play.dataframe
-                    t = t.reset_index().fillna(0)
-                    t['level_0'] = t['level_0'].map(seas_map)
-                    t['PlayerName'] = play.name
-                    t['TNme'] = team.name
-                    play_df = play_df.append(t.loc[t['level_0'] == season], ignore_index=True)
+            play_df.append([p.dataframe for p in ros.players])
     sdf = play_df.copy()
     sdf = sdf.drop_duplicates()
     sdf = sdf.rename(columns={'level_0': 'Season'})

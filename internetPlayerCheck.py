@@ -67,7 +67,8 @@ for yr in tmp_p:
     play_df = play_df.append(yr, ignore_index=True)
             
         
-sdf = play_df.dropna()
+sdf = play_df.drop_duplicates()
+sdf = sdf.dropna()
 sdf = sdf.rename(columns={'level_0': 'Season'})
 sdf = sdf.loc[sdf['Season'] != 'Career']
 sdf['position'] = sdf['position'].map({'Center': 5, 'Forward': 3, 'Guard': 1})
@@ -110,4 +111,22 @@ sdf['TID'] = -1
 for idx, grp in sdf.groupby(['team_abbreviation']):
     if idx in abbs:
         sdf.loc[grp.index, 'TID'] = abbs[idx]
+
+re_abbs = {value:key for key, value in abbs.items()}
+for idx in re_abbs:
+    tid_conv.loc[tid_conv['TID'] == idx, 'ITNme'] = re_abbs[idx]
+    
+for idx, row in tqdm(sdf.iterrows()):
+    sdf.loc[idx, 'TID'] = tid_conv.loc[tid_conv['ITNme'] == row['team_abbreviation'], 'TID'].values[0]
+    
+sdf = sdf.set_index(['Season', 'PlayerID', 'TID'])
+sdf = sdf.drop(columns=['conference', 'player_id', 'team_abbreviation'])
+sdf.columns = ['Ast%', 'Ast', 'Blk%', 'Blk', 'BPM', 'DBPM', 'DR%', 'DR', 'DWS',
+               'eFG%', 'FGA', 'FG%', 'FGM', 'FT/A', 'FTA', 'FT%', 'FTM', 'GP', 'GS',
+               'Height', 'Mins', 'OBPM', 'OR%', 'OR', 'OWS', 'PF', 'PER', 'Pts',
+               'PtsProd', 'Pos', 'Stl%', 'Stl', '3/2Rate', 'FGA3', 'FG3%', 'FGM3',
+               'R%', 'R', 'TS%', 'TO%', 'TO', 'FGA2', 'FG2%', 'FGM2', 'Usage%',
+               'Weight', 'WS', 'WSPer40']
+
+sdf.to_csv('./data/InternetPlayerData.csv')
     

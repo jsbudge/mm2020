@@ -85,39 +85,47 @@ sdf['Season'] = sdf['Season'].map(seas_map)
 sdf = sdf.dropna()
 sdf['Season'] = sdf['Season'].astype(int)
 
-pdf = pd.read_csv('./data/InternetPlayerNames.csv')
-for idx, row in pdf.iterrows():
-    pdf.loc[idx, 'PlayerName'] = row['PlayerName'].lower()
+# pdf = pd.read_csv('./data/InternetPlayerNames.csv')
+# for idx, row in pdf.iterrows():
+#     pdf.loc[idx, 'PlayerName'] = row['PlayerName'].lower()
 tid_conv = pd.read_csv('./data/InternetTeamNameToTID.csv')
-abbs = {}
+# abbs = {}
 
 sdf['PlayerID'] = -1
 cnt = 0
 for idx, grp in tqdm(sdf.groupby(['player_id'])):
     sdf.loc[grp.index, 'PlayerID'] = cnt
-    nme = idx.split('-')
-    rnme = ''
-    for n in nme[:-1]:
-        rnme += n + ' '
-    matches = get_close_matches(rnme[:-1], pdf['PlayerName'], cutoff=.8)
-    if len(matches) == 1:
-        tabb = list(set(grp['team_abbreviation']))
-        if len(tabb) == 1:
-            if tabb[0] not in abbs:
-                abbs[tabb[0]] = pdf.loc[pdf['PlayerName'] == matches[0], 'TID'].values[0]
+    # nme = idx.split('-')
+    # rnme = ''
+    # for n in nme[:-1]:
+    #     rnme += n + ' '
+    # matches = get_close_matches(rnme[:-1], pdf['PlayerName'], cutoff=.8)
+    # if len(matches) == 1:
+    #     tabb = list(set(grp['team_abbreviation']))
+    #     if len(tabb) == 1:
+    #         if tabb[0] not in abbs:
+    #             abbs[tabb[0]] = pdf.loc[pdf['PlayerName'] == matches[0], 'TID'].values[0]
     cnt += 1
     
 sdf['TID'] = -1
-for idx, grp in sdf.groupby(['team_abbreviation']):
-    if idx in abbs:
-        sdf.loc[grp.index, 'TID'] = abbs[idx]
+# for idx, grp in sdf.groupby(['team_abbreviation']):
+#     if idx in abbs:
+#         sdf.loc[grp.index, 'TID'] = abbs[idx]
 
-re_abbs = {value:key for key, value in abbs.items()}
-for idx in re_abbs:
-    tid_conv.loc[tid_conv['TID'] == idx, 'ITNme'] = re_abbs[idx]
+# re_abbs = {value:key for key, value in abbs.items()}
+# for idx in re_abbs:
+#     tid_conv.loc[tid_conv['TID'] == idx, 'ITNme'] = re_abbs[idx]
     
 for idx, row in tqdm(sdf.iterrows()):
     sdf.loc[idx, 'TID'] = tid_conv.loc[tid_conv['ITNme'] == row['team_abbreviation'], 'TID'].values[0]
+    
+pdf = sdf[['Season', 'TID', 'PlayerID', 'team_abbreviation', 'player_id']].copy()
+for idx, row in tqdm(pdf.iterrows()):
+    nme = row['player_id'].split('-')
+    rnme = ''
+    for n in nme[:-1]:
+        rnme += n + ' '
+    pdf.loc[idx, 'player_id'] = rnme[:-1].title()
     
 sdf = sdf.set_index(['Season', 'PlayerID', 'TID'])
 sdf = sdf.drop(columns=['conference', 'player_id', 'team_abbreviation'])

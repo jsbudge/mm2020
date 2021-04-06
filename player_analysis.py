@@ -74,7 +74,7 @@ savdf = st.getSeasonalStats(sdf, strat='relelo')
 tdf = st.arrangeTourneyGames()[0]
 adv_tdf = st.getTourneyStats(tdf, sdf)
 pdf = pd.read_csv('./data/InternetPlayerNames.csv').set_index(['Season', 'PlayerID']).sort_index()
-scale = PowerTransformer()
+scale = StandardScaler()
 #%%
 
 n_kpca_comps = 10
@@ -103,7 +103,7 @@ merge_df = scaleDF(merge_df, scale).dropna()
     
 #An attempt to create an all-in-one offense and defense score
 m_mi = getPairwiseMI(merge_df.join(savdf[['T_OffRat', 'T_DefRat']], on=['Season', 
-                                    'TID']), adj=False)
+                                    'TID']), adj=True)
 m_cov = merge_df.join(savdf[['T_OffRat', 'T_DefRat']], on=['Season', 
                                     'TID']).cov()
 cov_cols = [col for col in m_cov.columns if 'T_' not in col]
@@ -118,9 +118,9 @@ off_cons[shift_cons == 1] = 0
 def_cons[shift_cons == -1] = 0
 aug_df = pd.DataFrame(index=adv_df.index)
 
-aug_df['OffScore'] = np.sum(merge_df * off_cons, axis=1) / sum(off_cons) * adv_df['SoS'] * phys_df['MinPerc'] / 3
-aug_df['DefScore'] = np.sum(merge_df * def_cons, axis=1) / sum(def_cons) * adv_df['SoS'] * phys_df['MinPerc'] / 3
-aug_df['OverallScore'] = (aug_df['OffScore'] + aug_df['DefScore']) + aug_df[['OffScore', 'DefScore']].min(axis=1)
+aug_df['OffScore'] = np.sum(merge_df * off_cons, axis=1) / sum(off_cons) * phys_df['MinPerc'] / 4
+aug_df['DefScore'] = np.sum(merge_df * def_cons, axis=1) / sum(def_cons) * phys_df['MinPerc'] / 4
+aug_df['OverallScore'] = ((aug_df['OffScore'] + aug_df['DefScore']) + aug_df[['OffScore', 'DefScore']].min(axis=1))  * adv_df['SoS']
 aug_df['BalanceScore'] = np.log(1 / abs(aug_df['OffScore'] - aug_df['DefScore']))
 
 #CLUSTERING TO FIND PLAYER TYPES
@@ -170,8 +170,8 @@ for idx, grp in valid_adv_df.groupby(['Season', 'TID']):
     ts_df.loc[idx, 'BMI'] = np.average(bmi, 
                                        weights=posgrp['MinsPerGame'].values)
     ts_df.loc[idx, 'HQP'] = sum(grp['OverallScore'] > 85 * posgrp['MinPerc'] / 4)
-    ts_df.loc[idx, 'MQP'] = sum(np.logical_and(grp['OverallScore'] < 85,
-                                               grp['OverallScore'] > 40) * posgrp['MinPerc'] / 4)
+    ts_df.loc[idx, 'MQP'] = sum(np.logical_and(grp['OverallScore'] <= 85,
+                                               grp['OverallScore'] >= 40) * posgrp['MinPerc'] / 4)
     ts_df.loc[idx, 'LQP'] = sum(grp['OverallScore'] < 40 * posgrp['MinPerc'] / 4)
     
     for pos in posnum:
@@ -200,14 +200,14 @@ for season in np.arange(2012, 2022):
     b1 = spdf.loc[posgrp['Pos'] == 1]
     b1 = b1.loc[b1['OverallScore'] == b1['OverallScore'].max()].index.get_level_values(1).values[0]
     print('Best players for {}:\n'.format(season))
-    print('Offensive:\t' + pdf.loc(axis=0)[season, bop]['PlayerName'].values[0])
-    print('Defensive:\t' + pdf.loc(axis=0)[season, bdp]['PlayerName'].values[0])
-    print('Balance:\t\t' + pdf.loc(axis=0)[season, bbp]['PlayerName'].values[0])
-    print('Overall:\t\t' + pdf.loc(axis=0)[season, bovp]['PlayerName'].values[0])
+    print('Offensive:\t' + pdf.loc(axis=0)[season, bop]['player_id'])
+    print('Defensive:\t' + pdf.loc(axis=0)[season, bdp]['player_id'])
+    print('Balance:\t\t' + pdf.loc(axis=0)[season, bbp]['player_id'])
+    print('Overall:\t\t' + pdf.loc(axis=0)[season, bovp]['player_id'])
     print('Position players')
-    print('Center:\t' + pdf.loc(axis=0)[season, b5]['PlayerName'].values[0])
-    print('Forward:\t' + pdf.loc(axis=0)[season, b3]['PlayerName'].values[0])
-    print('Guard:\t' + pdf.loc(axis=0)[season, b1]['PlayerName'].values[0])
+    print('Center:\t' + pdf.loc(axis=0)[season, b5]['player_id'])
+    print('Forward:\t' + pdf.loc(axis=0)[season, b3]['player_id'])
+    print('Guard:\t' + pdf.loc(axis=0)[season, b1]['player_id'])
     print('')
     
 perusal = valid_adv_df.loc(axis=0)[2021, :, :].join(pdf.loc(axis=0)[2021, :], on=['Season', 'PlayerID'])

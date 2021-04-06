@@ -65,7 +65,7 @@ def getAllAverages(tid):
         
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 avs = {}
-m_types = ['relelo', 'rank', 'mest', 'recent']
+m_types = ['relelo', 'recent']
 for m in tqdm(m_types):
     avs[m] = st.getSeasonalStats(sdf, strat=m)
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()

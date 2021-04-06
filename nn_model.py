@@ -72,8 +72,8 @@ def shuffle(df):
 #%%
 print('Loading raw data...')
 tune_hyperparams = False
-scale = PowerTransformer()
-scale_st2 = PowerTransformer()
+scale = StandardScaler()
+scale_st2 = StandardScaler()
 names = st.loadTeamNames()
 
 sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
@@ -118,10 +118,10 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
       metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
     )
 
-learn_rate = 1e-4
+learn_rate = 1e-3
 num_epochs = 6000
 n_layers = 1
-n_nodes = 500
+n_nodes = 300
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 logdir = "logs/fit/" + runID
 k_calls = [tf.keras.callbacks.EarlyStopping(

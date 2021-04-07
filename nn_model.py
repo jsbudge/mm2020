@@ -118,16 +118,16 @@ with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
       metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
     )
 
-learn_rate = 1e-3
+learn_rate = 1e-5
 num_epochs = 6000
-n_layers = 1
-n_nodes = 300
+n_layers = 4
+n_nodes = 50
 runID = datetime.now().strftime("%Y%m%d-%H%M%S")
 logdir = "logs/fit/" + runID
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
                     min_delta=1e-5,
-                    patience=20,
+                    patience=40,
                     verbose=2,
                     mode="auto",
                     baseline=None,
@@ -247,7 +247,7 @@ m2.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4),
 k_calls = [tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",
                     min_delta=1e-4,
-                    patience=30,
+                    patience=40,
                     verbose=2,
                     mode="auto",
                     baseline=None,
@@ -255,7 +255,7 @@ k_calls = [tf.keras.callbacks.EarlyStopping(
             tf.keras.callbacks.ReduceLROnPlateau(
                     monitor="val_loss",
                     factor=0.1,
-                    patience=15,
+                    patience=10,
                     verbose=2,
                     mode="auto",
                     min_delta=1e-4,

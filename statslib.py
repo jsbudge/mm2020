@@ -257,7 +257,7 @@ def getTourneyStats(tdf, df, av_strat='mean'):
         wdf.loc[idx, 'T_Seed'] = sd
         wdf.loc[idx, 'T_FinalElo'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values[-1]
         wdf.loc[idx, 'T_FinalRank'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values[-1]
-        #wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
+        wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
     wdf = wdf.merge(conf, on=['Season', 'TID']).set_index(['Season', 'TID'])
     return wdf
 

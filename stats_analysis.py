@@ -91,9 +91,9 @@ inf_df['ExpScDiff'] = exp_score.groupby(['Season', 'TID']).mean()
 scale = StandardScaler()
 cong_df = st.merge(inf_df, tsdf, *[avs[m] for m in m_types]).dropna()
 cong_df = pd.DataFrame(index=cong_df.index, columns=cong_df.columns, data=scale.fit_transform(cong_df))
-tvsd = TruncatedSVD(n_components=250)
+tvsd = TruncatedSVD(n_components=cong_df.shape[1]-1)
 
-#cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(tvsd.fit_transform(cong_df)))
+cong_df = pd.DataFrame(index=cong_df.index, data=scale.fit_transform(tvsd.fit_transform(cong_df)))
 tdf_diff = st.getMatches(tdf, cong_df, diff=True)
 
 #%%

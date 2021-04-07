@@ -1,0 +1,122 @@
+Model evaluated for 2021. Score: 0, Loss: 0.00, Acc: 0.00%
+RND64			RND32			SWT16			E8			FF			CH
+Michigan: 0.94, 0.06 :TX Southern
+			Michigan: 0.90, 0.10 :LSU
+LSU: 0.69, 0.31 :St Bonaventure
+						Michigan: 0.90, 0.10 :Florida St
+Colorado: 0.91, 0.09 :Georgetown
+			Florida St: 0.55, 0.45 :Colorado
+Florida St: 0.91, 0.09 :UNC Greensboro
+									Michigan: 0.88, 0.12 :Alabama
+BYU: 0.81, 0.19 :UCLA
+			Texas: 0.52, 0.48 :BYU
+Texas: 0.89, 0.11 :Abilene Chr
+						Alabama: 0.73, 0.27 :Texas
+Connecticut: 0.71, 0.29 :Maryland
+			Alabama: 0.83, 0.17 :Connecticut
+Alabama: 0.93, 0.07 :Iona
+												Michigan: 0.53, 0.47 :Gonzaga
+Gonzaga: 0.94, 0.06 :Appalachian St
+			Gonzaga: 0.92, 0.08 :Oklahoma
+Oklahoma: 0.53, 0.47 :Missouri
+						Gonzaga: 0.89, 0.11 :Virginia
+Creighton: 0.86, 0.14 :UC Santa Barbara
+			Virginia: 0.59, 0.41 :Creighton
+Virginia: 0.89, 0.11 :Ohio
+									Gonzaga: 0.83, 0.17 :Iowa
+USC: 0.80, 0.20 :Drake
+			Kansas: 0.50, 0.50 :USC
+Kansas: 0.92, 0.08 :E Washington
+						Iowa: 0.77, 0.23 :USC
+Oregon: 0.64, 0.36 :VCU
+			Iowa: 0.86, 0.14 :Oregon
+Iowa: 0.92, 0.08 :Grand Canyon
+															Michigan: 0.71, 0.29 :Baylor
+Illinois: 0.93, 0.07 :Drexel
+			Illinois: 0.87, 0.13 :Loyola-Chicago
+Loyola-Chicago: 0.77, 0.23 :Georgia Tech
+						Illinois: 0.84, 0.16 :Oklahoma St
+Tennessee: 0.90, 0.10 :Oregon St
+			Oklahoma St: 0.66, 0.34 :Tennessee
+Oklahoma St: 0.91, 0.09 :Liberty
+									Illinois: 0.53, 0.47 :Houston
+San Diego St: 0.86, 0.14 :Syracuse
+			West Virginia: 0.36, 0.64 :San Diego St
+West Virginia: 0.92, 0.08 :Morehead St
+						Houston: 0.76, 0.24 :San Diego St
+Clemson: 0.34, 0.66 :Rutgers
+			Houston: 0.91, 0.09 :Rutgers
+Houston: 0.93, 0.07 :Cleveland St
+												Illinois: 0.33, 0.67 :Baylor
+Baylor: 0.93, 0.07 :Hartford
+			Baylor: 0.89, 0.11 :Wisconsin
+North Carolina: 0.37, 0.63 :Wisconsin
+						Baylor: 0.90, 0.10 :Villanova
+Villanova: 0.83, 0.17 :Winthrop
+			Purdue: 0.41, 0.59 :Villanova
+Purdue: 0.74, 0.26 :North Texas
+									Baylor: 0.80, 0.20 :Ohio St
+Texas Tech: 0.74, 0.26 :Utah St
+			Arkansas: 0.71, 0.29 :Texas Tech
+Arkansas: 0.81, 0.19 :Colgate
+						Ohio St: 0.66, 0.34 :Arkansas
+Florida: 0.70, 0.30 :Virginia Tech
+			Ohio St: 0.89, 0.11 :Florida
+Ohio St: 0.93, 0.07 :Oral Roberts
+Model: "model_1"
+__________________________________________________________________________________________________
+Layer (type)                    Output Shape         Param #     Connected to                     
+==================================================================================================
+input_1 (InputLayer)            [(None, 102)]        0                                            
+__________________________________________________________________________________________________
+init_dense (Dense)              (None, 500)          51500       input_1[0][0]                    
+__________________________________________________________________________________________________
+dropout (Dropout)               (None, 500)          0           init_dense[0][0]                 
+__________________________________________________________________________________________________
+dense_0 (Dense)                 (None, 500)          250500      dropout[0][0]                    
+__________________________________________________________________________________________________
+dropout_1 (Dropout)             (None, 500)          0           dense_0[0][0]                    
+__________________________________________________________________________________________________
+dense_1 (Dense)                 (None, 500)          250500      dropout_1[0][0]                  
+__________________________________________________________________________________________________
+dropout_2 (Dropout)             (None, 500)          0           dense_1[0][0]                    
+__________________________________________________________________________________________________
+dense_2 (Dense)                 (None, 500)          250500      dropout_2[0][0]                  
+__________________________________________________________________________________________________
+dropout_3 (Dropout)             (None, 500)          0           dense_2[0][0]                    
+__________________________________________________________________________________________________
+input_2 (InputLayer)            [(None, 9)]          0                                            
+__________________________________________________________________________________________________
+final_dense (Dense)             (None, 500)          250500      dropout_3[0][0]                  
+__________________________________________________________________________________________________
+dense_aug1 (Dense)              (None, 9)            90          input_2[0][0]                    
+__________________________________________________________________________________________________
+output (Dense)                  (None, 2)            1002        final_dense[0][0]                
+__________________________________________________________________________________________________
+dense_aug2 (Dense)              (None, 9)            90          dense_aug1[0][0]                 
+__________________________________________________________________________________________________
+concatenate (Concatenate)       (None, 11)           0           output[0][0]                     
+                                                                 dense_aug2[0][0]                 
+__________________________________________________________________________________________________
+dense_augconc (Dense)           (None, 500)          6000        concatenate[0][0]                
+__________________________________________________________________________________________________
+aug_output (Dense)              (None, 2)            1002        dense_augconc[0][0]              
+==================================================================================================
+Total params: 1,061,684
+Trainable params: 1,061,684
+Non-trainable params: 0
+__________________________________________________________________________________________________
+
+Scores for training years:
+		ESPN		LogLoss		Acc.
+2012		1320		0.67			0.68
+2013		1160		0.69			0.63
+2014		640		0.62			0.60
+2015		930		0.59			0.70
+2016		760		0.75			0.59
+2017		740		0.60			0.70
+
+Scores for validation years:
+		ESPN		LogLoss		Acc.
+2018		800		0.77			0.62
+2019		960		0.66			0.70

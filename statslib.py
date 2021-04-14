@@ -21,10 +21,9 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from itertools import combinations, permutations
 
-stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA', 
+stat_names = ['Score', 'FGM', 'FGA', 'FGM3', 'FGA3', 'FTM', 'FTA',
               'OR', 'DR', 'Ast', 'TO', 'Stl', 'Blk', 'PF']
 id_cols = ['GameID', 'Season', 'DayNum', 'TID', 'OID']
-
 
 '''
 gauss
@@ -39,8 +38,10 @@ Params:
 Returns:
     float - value of gaussian PDF given the above parameters.
 '''
-def gauss(x,a,x0,sigma):
-    return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+
+def gauss(x, a, x0, sigma):
+    return a * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
 
 
 '''
@@ -54,6 +55,8 @@ Params:
 Returns:
     data: Dict - index: file name, each element is the path to that file
 '''
+
+
 def getFiles(fdir='data'):
     data = {}
     for file in os.listdir(fdir):
@@ -61,6 +64,7 @@ def getFiles(fdir='data'):
             dict_name = file.split('.')[0]
             data[dict_name] = os.path.join(fdir, file)
     return data
+
 
 '''
 getGames
@@ -77,6 +81,8 @@ Returns:
     split = False
         ret: DataFrame - frame of all games, double the length of the original CSV
 '''
+
+
 def getGames(season=None, split=False, tourney=False):
     if not tourney:
         df = pd.read_csv('./data/MRegularSeasonDetailedResults.csv')
@@ -84,29 +90,31 @@ def getGames(season=None, split=False, tourney=False):
         df = pd.read_csv('./data/MNCAATourneyDetailedResults.csv')
     if season is not None:
         df = df.loc[df['Season'] == season]
-    #Map location to numbers
+    # Map location to numbers
     df['WLoc'] = df['WLoc'].map({'A': -1, 'N': 0, 'H': 1})
-    
-    #Add a GameID so we can identify all the games with a single ID
+
+    # Add a GameID so we can identify all the games with a single ID
     df['GameID'] = df.index.values
-    
-    #Grab the correct columns for winners and losers
+
+    # Grab the correct columns for winners and losers
     wdf = df[['GameID', 'Season', 'DayNum', 'WTeamID', 'WScore', 'LTeamID', 'LScore', 'WLoc',
-       'NumOT', 'WFGM', 'WFGA', 'WFGM3', 'WFGA3', 'WFTM', 'WFTA', 'WOR', 'WDR',
-       'WAst', 'WTO', 'WStl', 'WBlk', 'WPF']].rename(columns={'WLoc': 'GLoc'})
+              'NumOT', 'WFGM', 'WFGA', 'WFGM3', 'WFGA3', 'WFTM', 'WFTA', 'WOR', 'WDR',
+              'WAst', 'WTO', 'WStl', 'WBlk', 'WPF']].rename(columns={'WLoc': 'GLoc'})
     ldf = df[['GameID', 'Season', 'DayNum', 'WTeamID', 'WScore', 'LTeamID', 'LScore', 'WLoc',
-    'NumOT', 'LFGM', 'LFGA', 'LFGM3', 'LFGA3', 'LFTM', 'LFTA', 'LOR', 'LDR', 'LAst',
-    'LTO', 'LStl', 'LBlk', 'LPF']].rename(columns={'WLoc': 'GLoc'})
-    
-    #Flip location for losing teams, since 'Home' and 'Away' are based on the winning team
+              'NumOT', 'LFGM', 'LFGA', 'LFGM3', 'LFGA3', 'LFTM', 'LFTA', 'LOR', 'LDR', 'LAst',
+              'LTO', 'LStl', 'LBlk', 'LPF']].rename(columns={'WLoc': 'GLoc'})
+
+    # Flip location for losing teams, since 'Home' and 'Away' are based on the winning team
     ldf['GLoc'] = -ldf['GLoc']
-    
-    #We need to copy things like this so each team's winning and losing games
-    #are preserved
-    wdf_1 = wdf.copy(); wdf_2 = wdf.copy()
-    ldf_1 = ldf.copy(); ldf_2 = ldf.copy()
-    
-    #Remove winner and loser columns and replace with T or O
+
+    # We need to copy things like this so each team's winning and losing games
+    # are preserved
+    wdf_1 = wdf.copy();
+    wdf_2 = wdf.copy()
+    ldf_1 = ldf.copy();
+    ldf_2 = ldf.copy()
+
+    # Remove winner and loser columns and replace with T or O
     for col in df.columns:
         if col[0] == 'W':
             wdf_1 = wdf_1.rename(columns={col: 'T_' + col[1:]})
@@ -120,9 +128,9 @@ def getGames(season=None, split=False, tourney=False):
             wdf_2 = wdf_2.rename(columns={col: 'T_' + col[1:]})
     if not split:
         ret = wdf_1.merge(ldf_1, on='GameID').append(wdf_2.merge(ldf_2, on='GameID'), ignore_index=True)
-        
-        #Remove the extra stuff from columns that both teams share
-        #Pandas adds extra identifiers during the dataframe merge
+
+        # Remove the extra stuff from columns that both teams share
+        # Pandas adds extra identifiers during the dataframe merge
         for col in ret.columns:
             if col[-2:] == '_x':
                 ret = ret.rename(columns={col: col[:-2]})
@@ -143,23 +151,27 @@ def getGames(season=None, split=False, tourney=False):
         w = w.rename(columns={'T_TeamID': 'TID', 'O_TeamID': 'OID'})
         l = l.rename(columns={'T_TeamID': 'TID', 'O_TeamID': 'OID'})
         return w, l
-    
+
+
 """
 NOT COMPLETE
 """
+
+
 def addRegressionStats(df, gr):
     sts = df.copy()
     lms = [('RF', RandomForestRegressor(n_estimators=500)),
-       ('SGD', SGDRegressor()),
-       ('ARD', ARDRegression()),
-       ('NN', MLPRegressor(max_iter=1000)),
-       ('Theil', TheilSenRegressor())]
+           ('SGD', SGDRegressor()),
+           ('ARD', ARDRegression()),
+           ('NN', MLPRegressor(max_iter=1000)),
+           ('Theil', TheilSenRegressor())]
     for lm in lms:
-        sgd = make_pipeline(StandardScaler(), 
+        sgd = make_pipeline(StandardScaler(),
                             lm[1]).fit(sts, gr)
         sts[lm[0]] = sgd.predict(sts)
     return sts
-         
+
+
 '''
 normalizeToSeason
 Modifies a DataFrame so each statistical columns has zero mean and a standard
@@ -173,6 +185,8 @@ Params:
 Returns:
     df: DataFrame - normalized frame.
 '''
+
+
 def normalizeToSeason(df, scaler=None):
     wdf = df.copy()
     for season, sdf in df.groupby('Season'):
@@ -183,6 +197,7 @@ def normalizeToSeason(df, scaler=None):
                 if col not in ['GameID', 'Season', 'GLoc', 'DayNum', 'TID', 'OID', 'NumOT']:
                     wdf.loc[season, col] = (sdf[col].values - sdf[col].mean()) / sdf[col].std()
     return wdf
+
 
 '''
 getDiffs
@@ -195,6 +210,8 @@ Returns:
     ret: DataFrame - frame with differences. Names are changed to reflect the
                         differencing.
 '''
+
+
 def getDiffs(df):
     ret = pd.DataFrame()
     for col in df.columns:
@@ -209,6 +226,7 @@ def getDiffs(df):
             ret[col] = df[col]
     return ret
 
+
 '''
 getTourneyStats
 Adds various advanced statistical columns to a DataFrame based on tournament
@@ -221,6 +239,8 @@ Params:
 Returns:
     wdf: DataFrame - augmented frame.
 '''
+
+
 def getTourneyStats(tdf, df, av_strat='mean'):
     wdf = pd.DataFrame(index=tdf.groupby(['Season', 'TID']).mean().index)
     df = df.sort_values('GameID')
@@ -228,24 +248,26 @@ def getTourneyStats(tdf, df, av_strat='mean'):
     av_df = getSeasonalStats(df, strat=av_strat)
     seeds = pd.read_csv('./data/MNCAATourneySeeds.csv')
     conf = pd.read_csv('./data/MTeamConferences.csv').rename(columns={'TeamID': 'TID'})
-    conf['Conf_MeanElo'] = -1; conf['Conf_MeanRank'] = -1
-    conf['Conf_MaxRank'] = -1; conf['Conf_MaxElo'] = -1
+    conf['Conf_MeanElo'] = -1;
+    conf['Conf_MeanRank'] = -1
+    conf['Conf_MaxRank'] = -1;
+    conf['Conf_MaxElo'] = -1
     for idx, grp in conf.groupby(['Season', 'ConfAbbrev']):
         if idx[0] in av_df.index.get_level_values(0):
             conf.loc[np.logical_and(conf['Season'] == idx[0],
-                                    conf['ConfAbbrev'] == idx[1]), 
+                                    conf['ConfAbbrev'] == idx[1]),
                      ['Conf_MeanElo',
-                      'Conf_MeanRank']] = av_df.loc(axis=0)[idx[0], 
-                                                     grp['TID']][['T_Elo',
-                                                                     'T_Rank']].mean().values
+                      'Conf_MeanRank']] = av_df.loc(axis=0)[idx[0],
+                                                            grp['TID']][['T_Elo',
+                                                                         'T_Rank']].mean().values
             conf.loc[np.logical_and(conf['Season'] == idx[0],
-                                    conf['ConfAbbrev'] == idx[1]), 
-                     'Conf_MaxElo'] = av_df.loc(axis=0)[idx[0], 
-                                                     grp['TID']]['T_Elo'].max()
+                                    conf['ConfAbbrev'] == idx[1]),
+                     'Conf_MaxElo'] = av_df.loc(axis=0)[idx[0],
+                                                        grp['TID']]['T_Elo'].max()
             conf.loc[np.logical_and(conf['Season'] == idx[0],
-                                    conf['ConfAbbrev'] == idx[1]), 
-                     'Conf_MaxRank'] = av_df.loc(axis=0)[idx[0], 
-                                                     grp['TID']]['T_Rank'].min()
+                                    conf['ConfAbbrev'] == idx[1]),
+                     'Conf_MaxRank'] = av_df.loc(axis=0)[idx[0],
+                                                         grp['TID']]['T_Rank'].min()
     conf = conf.drop(columns=['ConfAbbrev'])
     for idx, team in tdf.groupby(['Season', 'TID']):
         wdf.loc[idx, 'T_Momentum'] = np.mean(np.gradient(df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values)[-3:])
@@ -257,9 +279,10 @@ def getTourneyStats(tdf, df, av_strat='mean'):
         wdf.loc[idx, 'T_Seed'] = sd
         wdf.loc[idx, 'T_FinalElo'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values[-1]
         wdf.loc[idx, 'T_FinalRank'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values[-1]
-        wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
+        # wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
     wdf = wdf.merge(conf, on=['Season', 'TID']).set_index(['Season', 'TID'])
     return wdf
+
 
 '''
 getStats
@@ -271,6 +294,8 @@ Params:
 Returns:
     wdf: DataFrame - augmented frame.
 '''
+
+
 def getStats(df):
     wdf = df[id_cols].copy()
     wdf['T_FG%'] = df['T_FGM'] / df['T_FGA']
@@ -288,7 +313,7 @@ def getStats(df):
     wdf['T_FT%'] = df['T_FTM'] / df['T_FTA']
     wdf['T_TO%'] = df['T_TO'] / wdf['T_Poss']
     wdf['T_ExtraPoss'] = df['T_OR'] + df['T_Stl'] + df['O_PF']
-     
+
     wdf['O_FG%'] = df['O_FGM'] / df['O_FGA']
     wdf['O_FG3%'] = df['O_FGM3'] / df['O_FGA3']
     wdf['O_PPS'] = (df['O_Score'] - df['O_FTM']) / df['O_FGA']
@@ -304,7 +329,7 @@ def getStats(df):
     wdf['O_FT%'] = df['O_FTM'] / df['O_FTA']
     wdf['O_TO%'] = df['O_TO'] / wdf['O_Poss']
     wdf['O_ExtraPoss'] = df['O_OR'] + df['O_Stl'] + df['T_PF']
-    
+
     wdf['T_DefRat'] = wdf['O_OffRat']
     wdf['O_DefRat'] = wdf['T_OffRat']
     wdf['T_GameScore'] = 40 * wdf['T_eFG%'] + 20 * wdf['T_R%'] + 15 * wdf['T_FT/A'] + 25 - 25 * wdf['T_TO%']
@@ -313,9 +338,9 @@ def getStats(df):
     wdf['O_ProdPoss'] = wdf['O_Poss'] - df['O_TO'] - (df['O_FGA'] - df['O_FGM'] + .44 * df['O_FTM'])
     wdf['T_ProdPoss%'] = wdf['T_ProdPoss'] / wdf['T_Poss']
     wdf['O_ProdPoss%'] = wdf['O_ProdPoss'] / wdf['O_Poss']
-    
-    
+
     return wdf.fillna(0)
+
 
 '''
 getInfluenceStats
@@ -330,6 +355,8 @@ Params:
 Returns:
     wdf: DataFrame - a frame with the calculated stats.
 '''
+
+
 def getInfluenceStats(df, save=True, recalc=False, norm=False):
     if not recalc:
         try:
@@ -353,7 +380,7 @@ def getInfluenceStats(df, save=True, recalc=False, norm=False):
     if save:
         inf_df.to_csv('./data/influence_stats.csv')
     return inf_df
-    
+
 
 '''
 getSeasonalStats
@@ -374,6 +401,8 @@ Returns:
     wdf: DataFrame - frame with a single entry per team per season, with the means
                         and added stats for that team.
 '''
+
+
 def getSeasonalStats(df, strat='rank', av_only=False, seasonal_only=False):
     wdf = df.groupby(['Season', 'TID']).mean()
     avdf = df.copy()
@@ -384,29 +413,53 @@ def getSeasonalStats(df, strat='rank', av_only=False, seasonal_only=False):
     dfapp = avdf.groupby(['Season', 'TID'])
     if not seasonal_only:
         if strat == 'rank':
-            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=400-x['O_Rank'].values))
+            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=400 - x['O_Rank'].values))
         elif strat == 'elo':
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights=x['O_Elo'].values))
         elif strat == 'relelo':
-            data = dfapp.apply(lambda x: np.average(x, axis=0, weights= .1 / abs(x['T_Elo'] - x['O_Elo']).values**(1/4)))
+            data = dfapp.apply(
+                lambda x: np.average(x, axis=0, weights=.1 / abs(x['T_Elo'] - x['O_Elo']).values ** (1 / 4)))
         elif strat == 'gausselo':
             data = dfapp.apply(lambda x: np.average(x, axis=0, weights=gauss(x['T_Elo'], 1, x['O_Elo'].mean(), 100)))
         elif strat == 'mest':
-            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=1 / (x.std(axis=0).values * np.sqrt(2 * np.pi)) * np.exp(-.5 * ((x - x.median(axis=0)).values / x.std(axis=0).values)**2)))
+            data = dfapp.apply(lambda x: np.average(x, axis=0,
+                                                    weights=1 / (x.std(axis=0).values * np.sqrt(2 * np.pi)) * np.exp(
+                                                        -.5 * ((x - x.median(axis=0)).values / x.std(
+                                                            axis=0).values) ** 2)))
         elif strat == 'recent':
-            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=np.arange(x.shape[0])**2))
+            data = dfapp.apply(lambda x: np.average(x, axis=0, weights=np.arange(x.shape[0]) ** 2))
         elif strat == 'mean':
             data = dfapp.mean()
+        elif strat == 'median':
+            data = dfapp.median()
         for idx, row in wdf.iterrows():
-                wdf.loc[idx] = data.loc[idx]
+            wdf.loc[idx] = data.loc[idx]
     if not av_only or seasonal_only:
         wdf['T_Win%'] = dfapp.apply(lambda x: sum(x['T_Score'] > x['O_Score']) / x.shape[0])
-        wdf['T_PythWin%'] = dfapp.apply(lambda grp: sum(grp['T_Score']**13.91) / sum(grp['T_Score']**13.91 + grp['O_Score']**13.91))
-        wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(400-grp['O_Rank'], weights=grp['O_Elo']) / 4)
+        wdf['T_PythWin%'] = dfapp.apply(
+            lambda grp: sum(grp['T_Score'] ** 13.91) / sum(grp['T_Score'] ** 13.91 + grp['O_Score'] ** 13.91))
+        wdf['T_OWin%'] = df.reset_index().merge(wdf['T_Win%'].reset_index(),
+                                                left_on=['Season', 'OID'],
+                                                right_on=['Season', 'TID']).groupby(['Season',
+                                                                                     'TID_x']).mean()['T_Win%'].values
+        oo_win = df.reset_index().merge(wdf['T_OWin%'], left_on=['Season', 'OID'], right_on=['Season', 'TID']).groupby(
+            ['Season', 'TID']).mean()['T_OWin%']
+        wdf['T_RPI'] = .25 * wdf['T_Win%'] + .5 * wdf['T_OWin%'] + .25 * oo_win
+        wdf['T_OPythWin%'] = df.reset_index().merge(wdf['T_PythWin%'].reset_index(),
+                                                    left_on=['Season', 'OID'],
+                                                    right_on=['Season', 'TID']).groupby(['Season',
+                                                                                         'TID_x']).mean()[
+            'T_PythWin%'].values
+        oo_win = \
+        df.reset_index().merge(wdf['T_OPythWin%'], left_on=['Season', 'OID'], right_on=['Season', 'TID']).groupby(
+            ['Season', 'TID']).mean()['T_OPythWin%']
+        wdf['T_PythRPI'] = .25 * wdf['T_PythWin%'] + .5 * wdf['T_OPythWin%'] + .25 * oo_win
+        wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(400 - grp['O_Rank'], weights=grp['O_Elo']) / 4)
         wdf['T_ExpWin%'] = dfapp.apply(lambda x: sum(x['T_Elo'] > x['O_Elo']) / x.shape[0])
     if seasonal_only:
-        wdf = wdf[['T_Win%', 'T_PythWin%', 'T_SoS', 'T_ExpWin%']]
+        wdf = wdf[['T_Win%', 'T_OWin%', 'T_PythWin%', 'T_OPythWin%', 'T_RPI', 'T_PythRPI', 'T_SoS', 'T_ExpWin%']]
     return wdf
+
 
 '''
 getTeamStats
@@ -420,13 +473,16 @@ Params:
 Returns:
     wdf: DataFrame - frame with all opponent stuff stripped.
 '''
+
+
 def getTeamStats(df, av=False):
     wdf = pd.DataFrame(index=df.index)
     for col in df.columns:
         if col[:2] == 'T_':
             wdf[col] = df[col]
     return wdf
-        
+
+
 '''
 loadTeamNames
 Look up a team and/or ID quickly and easily.
@@ -435,6 +491,8 @@ Returns:
     ret: Dict - dict: index is TeamID or TeamName, and elements have the TeamName
                         and TeamID, respectively.
 '''
+
+
 def loadTeamNames():
     df = pd.read_csv('./data/MTeams.csv')
     ret = {}
@@ -444,7 +502,6 @@ def loadTeamNames():
     return ret
 
 
-    
 '''
 getSystemWeights
 Given a getGames DataFrame and a file dict, returns a DataFrame of weights
@@ -462,22 +519,24 @@ Returns:
                                 games for ranking systems. Same index
                                 and columns as sweights.
 '''
+
+
 def calcSystemWeights():
-    #This should only need to be run once, since it saves its results out to a CSV
+    # This should only need to be run once, since it saves its results out to a CSV
     df = getGames(split=False)
     mo = pd.read_csv('./data/MMasseyOrdinals.csv')
     sweights = pd.DataFrame(data=np.nan, index=list(set(mo['SystemName'])), columns=list(set(df['Season'])))
     sprobs = pd.DataFrame(data=np.nan, index=list(set(mo['SystemName'])), columns=list(set(df['Season'])))
-    
-    #Chosen based on prior calculations. This is subjective, of course,
-    #but should be pretty close to reality.
-    gcov = np.linalg.pinv(np.array([[  226.274257  , -1141.89534807],
-                                 [-1141.89534807, 12188.28247383]]))
-    
-    #Zero mean since the differences are symmetrical in a duplicated dataframe.
+
+    # Chosen based on prior calculations. This is subjective, of course,
+    # but should be pretty close to reality.
+    gcov = np.linalg.pinv(np.array([[226.274257, -1141.89534807],
+                                    [-1141.89534807, 12188.28247383]]))
+
+    # Zero mean since the differences are symmetrical in a duplicated dataframe.
     gmu = np.array([0, 0])
-    gaus2d = lambda x, y: np.exp(-(gcov[0, 0] * (x - gmu[0])**2 + 2 * gcov[0, 1] * \
-                                   (x - gmu[0]) * (y - gmu[1]) + gcov[1, 1] * (y - gmu[1])**2))
+    gaus2d = lambda x, y: np.exp(-(gcov[0, 0] * (x - gmu[0]) ** 2 + 2 * gcov[0, 1] * \
+                                   (x - gmu[0]) * (y - gmu[1]) + gcov[1, 1] * (y - gmu[1]) ** 2))
     diffs = getDiffs(df).sort_values('DayNum')
     for season in sweights.columns:
         wdf_diffs = diffs.loc[diffs['Season'] == season]
@@ -491,28 +550,31 @@ def calcSystemWeights():
                 if team.shape[0] < 2:
                     ranks = team['OrdinalRank'].values[0] * np.ones((wdf_diffs.loc[wdf_diffs['TID'] == tid].shape[0],))
                 else:
-                    #Interpolate between system outputs to get a team's rank at the time of an actual game
-                    #Linear interpolation
-                    ranks = np.interp(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'], 
-                                       team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
-                    #Cubic spline
-                    #ranks = CubicSpline(team['RankingDayNum'], team['OrdinalRank'])(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values)
-                    ranks[wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values < team['RankingDayNum'].values[0]] = team['OrdinalRank'].values[0]
+                    # Interpolate between system outputs to get a team's rank at the time of an actual game
+                    # Linear interpolation
+                    ranks = np.interp(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'],
+                                      team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
+                    # Cubic spline
+                    # ranks = CubicSpline(team['RankingDayNum'], team['OrdinalRank'])(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values)
+                    ranks[wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values < team['RankingDayNum'].values[0]] = \
+                    team['OrdinalRank'].values[0]
                 wdf_diffs.loc[wdf_diffs['TID'] == tid, 'T_Rank'] = ranks
                 wdf_diffs.loc[wdf_diffs['OID'] == tid, 'O_Rank'] = ranks
             rdiff = wdf_diffs['T_Rank'] - wdf_diffs['O_Rank']
             scores = gaus2d(wdf_diffs['Score_diff'], rdiff)
-            sweights.loc[idx, season] = sum(scores[np.logical_or(np.logical_and(rdiff < 0, 
-                                                                  wdf_diffs['Score_diff'] > 0),
-                                                                 np.logical_and(rdiff > 0, 
-                                                                  wdf_diffs['Score_diff'] < 0))]) / len(scores)
-            sprobs.loc[idx, season] = sum(np.logical_or(np.logical_and(rdiff < 0, 
-                                                         wdf_diffs['Score_diff'] > 0),
-                                                        np.logical_and(rdiff > 0, 
-                                                         wdf_diffs['Score_diff'] < 0))) / len(scores)
-    
+            sweights.loc[idx, season] = sum(scores[np.logical_or(np.logical_and(rdiff < 0,
+                                                                                wdf_diffs['Score_diff'] > 0),
+                                                                 np.logical_and(rdiff > 0,
+                                                                                wdf_diffs['Score_diff'] < 0))]) / len(
+                scores)
+            sprobs.loc[idx, season] = sum(np.logical_or(np.logical_and(rdiff < 0,
+                                                                       wdf_diffs['Score_diff'] > 0),
+                                                        np.logical_and(rdiff > 0,
+                                                                       wdf_diffs['Score_diff'] < 0))) / len(scores)
+
     sweights.to_csv('./data/sys_weights.csv', index_label='SystemName')
     return sweights, sprobs
+
 
 '''
 getRanks
@@ -526,6 +588,8 @@ Params:
 Returns:
     wdf: DataFrame - df with T_Rank and O_Rank columns added.
 '''
+
+
 def getRanks():
     wdf = getGames(split=False).set_index(['GameID', 'Season', 'TID', 'OID'])
     wdf = wdf.sort_values('DayNum')
@@ -533,37 +597,37 @@ def getRanks():
     wdf['T_Rank'] = 999
     wdf['O_Rank'] = 999
     mo = pd.read_csv('./data/MMasseyOrdinals.csv').set_index(['Season', 'TeamID'])
-    
+
     for idx, grp in tqdm(wdf.groupby(['Season', 'TID'])):
-        #Sort values by GameID so they're in chronological order
+        # Sort values by GameID so they're in chronological order
         grp = grp.sort_values('GameID')
-        
-        #Get DataFrame of all the relevant rankings and weightings for that season
+
+        # Get DataFrame of all the relevant rankings and weightings for that season
         try:
             ranks = mo.loc(axis=0)[idx[0], idx[1]].merge(weights, on='SystemName').sort_values('RankingDayNum')
-            #ranks = mo.loc[np.logical_and(mo['Season'] == idx[0], mo['TeamID'] == idx[1])].merge(weights, on='SystemName').sort_values('RankingDayNum')
-    
-            #Calculate a weighted LOESS fit to the ranking curve. Gives more weight
-            #to systems that are more accurate in that season
-            wdf.loc[grp.index, 'T_Rank'] = lowess(ranks['RankingDayNum'].values, 
-                                           ranks['OrdinalRank'].values, 
-                                           ranks[str(idx[0])].values, x0=grp['DayNum'], f=.25)
-            
-                                                                                  
-            #Apply these rankings to games where this team was the opponent
-            #wdf.loc(axis=0)[:, idx[1], idx[0], :]['O_Rank'] = wdf.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values
+            # ranks = mo.loc[np.logical_and(mo['Season'] == idx[0], mo['TeamID'] == idx[1])].merge(weights, on='SystemName').sort_values('RankingDayNum')
+
+            # Calculate a weighted LOESS fit to the ranking curve. Gives more weight
+            # to systems that are more accurate in that season
+            wdf.loc[grp.index, 'T_Rank'] = lowess(ranks['RankingDayNum'].values,
+                                                  ranks['OrdinalRank'].values,
+                                                  ranks[str(idx[0])].values, x0=grp['DayNum'], f=.25)
+
+            # Apply these rankings to games where this team was the opponent
+            # wdf.loc(axis=0)[:, idx[1], idx[0], :]['O_Rank'] = wdf.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values
         except:
             wdf.loc[grp.index, 'T_Rank'] = -1
-            
+
     wdf.loc[wdf.index.get_level_values(0).duplicated(keep='first'), 'O_Rank'] = \
         wdf.loc[wdf.index.get_level_values(0).duplicated(keep='last'), 'T_Rank'].values
     wdf.loc[wdf.index.get_level_values(0).duplicated(keep='last'), 'O_Rank'] = \
         wdf.loc[wdf.index.get_level_values(0).duplicated(keep='first'), 'T_Rank'].values
-        
-    #Save results out to a CSV so we don't have to wait for it to calculate these every time
+
+    # Save results out to a CSV so we don't have to wait for it to calculate these every time
     rank_df = wdf[['DayNum', 'O_Rank', 'T_Rank']].reset_index()
     rank_df.to_csv('./data/rank_file.csv', index=False)
     return wdf
+
 
 '''
 addRanks
@@ -576,10 +640,13 @@ Params:
 Returns:
     wdf: DataFrame - df with T_Rank and O_Rank columns added.
 '''
+
+
 def addRanks(df):
     rdf = pd.read_csv('./data/rank_file.csv')
     wdf = df.merge(rdf, on=['Season', 'GameID', 'DayNum', 'TID', 'OID'])
     return wdf
+
 
 '''
 calcElos
@@ -597,23 +664,26 @@ Params:
 Returns:
     wdf: DataFrame - frame with GameID, TID, OID, T_Elo, and O_Elo columns.
 '''
+
+
 def calcElo(K=35, margin=4.5):
     df = pd.read_csv('./data/MRegularSeasonCompactResults.csv')
     tids = list(set(df['WTeamID'].values) & set(df['LTeamID'].values))
     elos = dict(zip(list(tids), [1500] * len(tids)))
-    wdf = df[['Season', 'WTeamID', 'LTeamID', 'WLoc', 'DayNum']].copy().rename(columns={'WTeamID': 'TID', 'LTeamID': 'OID'})
+    wdf = df[['Season', 'WTeamID', 'LTeamID', 'WLoc', 'DayNum']].copy().rename(
+        columns={'WTeamID': 'TID', 'LTeamID': 'OID'})
     wdf = wdf.loc[wdf['Season'] >= 2000]
     wdf.loc[:, 'T_Elo'] = 1500
     wdf.loc[:, 'O_Elo'] = 1500
     wdf['ScoreDiff'] = df['WScore'] - df['LScore']
     season = df['Season'].min()
     for idx, gm in tqdm(wdf.iterrows()):
-        #First, regression to the mean if the season is new
+        # First, regression to the mean if the season is new
         if season != gm['Season']:
             for key in elos:
                 elos[key] = .15 * elos[key] + .85 * 1500
             season = gm['Season']
-        #Elo calculation stolen from 538
+        # Elo calculation stolen from 538
         hc_adv = 100 if gm['WLoc'] == 'H' else -100 if gm['WLoc'] == 'A' else 0
         elo_diff = elos[gm['TID']] + hc_adv - elos[gm['OID']]
         elo_shift = 1. / (10. ** (-elo_diff / 400.) + 1.)
@@ -630,6 +700,7 @@ def calcElo(K=35, margin=4.5):
     wdf.to_csv('./data/elo_file.csv', index=False)
     return wdf
 
+
 '''
 addElos
 Adds T_Elo and O_Elo to frame, using already calculated elo values. Requires
@@ -641,10 +712,13 @@ Params:
 Returns:
     df: DataFrame - df with T_Rank and O_Rank columns added.
 '''
+
+
 def addElos(df):
     rdf = pd.read_csv('./data/elo_file.csv')
     df = df.merge(rdf, on=['Season', 'TID', 'OID', 'DayNum'])
     return df
+
 
 '''
 joinFrame
@@ -657,8 +731,11 @@ Params:
 Returns:
     df: DataFrame - df1 and df2, merged on id columns.
 '''
+
+
 def joinFrame(df1, df2):
     return df1.merge(df2, on=['GameID', 'Season', 'DayNum', 'TID', 'OID'])
+
 
 '''
 arrangeFrame
@@ -680,6 +757,7 @@ Returns:
     All frames use GameID, Season, TID, OID as their indexes.
 '''
 
+
 def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False,
                  split=False):
     if split:
@@ -688,7 +766,7 @@ def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False,
         ts = getGames(season=season).drop(columns=['NumOT', 'GLoc'])
     if noraw:
         ts = joinFrame(ts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
-                          getStats(ts))
+                       getStats(ts))
     else:
         ts = joinFrame(ts, getStats(ts))
     ts = addRanks(ts)
@@ -702,6 +780,7 @@ def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False,
     if scaling is not None:
         ts = normalizeToSeason(ts, scaler=scaling)
     return ts, ty, tsdays
+
 
 '''
 arrangeTourneyGames
@@ -718,12 +797,14 @@ Returns:
     ttsdays: DataFrame - Frame (Series) of DayNum values.
     All frames use GameID, Season, TID, OID as their indexes.
 '''
+
+
 def arrangeTourneyGames(noraw=False):
     tts = getGames(tourney=True).drop(columns=['NumOT', 'GLoc'])
     tty = tts['T_Score'] < tts['O_Score'] - 0
     if noraw:
         tts = joinFrame(tts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
-                           getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])
+                        getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])
     else:
         tts = joinFrame(tts, getStats(tts)).set_index(['GameID', 'Season', 'TID', 'OID'])
     ttsdays = tts['DayNum']
@@ -731,12 +812,14 @@ def arrangeTourneyGames(noraw=False):
     tty.index = tts.index
     return tts, tty, ttsdays
 
+
 def getPointSpreadProbabilityFromElo(df):
     elodiff = df['T_Elo'] - df['O_Elo']
     eloNorm = erf(3 * elodiff / elodiff.max()) / 2 + .5
     pdiff = df['T_Score'] - df['O_Score']
     coeffs = np.polyfit(pdiff, eloNorm, 3)
     return np.poly1d(coeffs)
+
 
 '''
 getMatches
@@ -756,7 +839,8 @@ Returns:
     fdf: DataFrame - Frame with team_feats columns for both teams, using gids'
                 index.
 '''
-        
+
+
 def getMatches(gids, team_feats, season=None, diff=False):
     if season is not None:
         g = gids.loc(axis=0)[:, season, :, :]
@@ -769,17 +853,18 @@ def getMatches(gids, team_feats, season=None, diff=False):
                    right_on=['Season', 'TID']).set_index(ids)
     fdf = g1 - g2 if diff else g1.merge(g2, on=ids)
     return fdf
-    
-        
+
+
 def getAllMatches(team_feats, season, diff=False):
     sd = pd.read_csv('./data/MNCAATourneySeeds.csv')
     sd = sd.loc[sd['Season'] == season]['TeamID'].values
     teams = list(set(sd))
     matches = [[x, y] for (x, y) in permutations(teams, 2)]
     poss_games = pd.DataFrame(data=matches, columns=['TID', 'OID'])
-    poss_games['Season'] = season; poss_games['GameID'] = np.arange(poss_games.shape[0])
+    poss_games['Season'] = season;
+    poss_games['GameID'] = np.arange(poss_games.shape[0])
     gsc = poss_games.set_index(['GameID', 'Season'])
-    g1 = gsc.merge(team_feats, on=['Season', 'TID'], 
+    g1 = gsc.merge(team_feats, on=['Season', 'TID'],
                    right_index=True).sort_index()
     g1 = g1.reset_index().set_index(['GameID', 'Season', 'TID', 'OID'])
     g2 = gsc.merge(team_feats, left_on=['Season', 'OID'],
@@ -789,6 +874,7 @@ def getAllMatches(team_feats, season, diff=False):
     fdf = g1 - g2 if diff else g1.merge(g2, on=['GameID', 'Season', 'TID', 'OID'])
     return fdf
 
+
 def merge(*args):
     df = None
     n_idents = 1
@@ -796,11 +882,11 @@ def merge(*args):
         if df is None:
             df = d
         else:
-            df = df.merge(d, left_index=True, right_index=True, 
-                          suffixes=['_{}'.format(n_idents), '_{}'.format(n_idents+1)])
+            df = df.merge(d, left_index=True, right_index=True,
+                          suffixes=['_{}'.format(n_idents), '_{}'.format(n_idents + 1)])
         n_idents += 2
     return df
-            
+
 
 '''
 lowess
@@ -821,34 +907,35 @@ Returns:
     yest: numpy array - (N,) or (M,) array of estimated points from the regression.
                             Size is determined by x, or x0 if available.
 '''
+
+
 def lowess(x, y, w, x0=None, f=.1, n_iter=3):
     n = len(x)
     r = int(np.ceil(f * n))
     yest = np.zeros(n)
     delta = np.ones(n)
-    
-    #Looping through all x-points
+
+    # Looping through all x-points
     for iteration in range(n_iter):
         for i in range(n):
             weights = np.zeros((n,))
-            
-            #get subset of weight points
-            weights[max(0, i-r):min(i+r, n)] = w[max(0, i-r):min(i+r, n)]
+
+            # get subset of weight points
+            weights[max(0, i - r):min(i + r, n)] = w[max(0, i - r):min(i + r, n)]
             weights *= delta
             b = np.array([np.sum(weights * y), np.sum(weights * y * x)])
             A = np.array([[np.sum(weights), np.sum(weights * x)],
-                        [np.sum(weights * x), np.sum(weights * x * x)]])
+                          [np.sum(weights * x), np.sum(weights * x * x)]])
             theta = solve(A, b)
-            yest[i] = theta[0] + theta[1] * x[i] 
-        
-        #use the residuals to modify weighting
+            yest[i] = theta[0] + theta[1] * x[i]
+
+            # use the residuals to modify weighting
         residuals = y - yest
         s = np.median(np.abs(residuals))
         delta = np.clip(residuals / (6.0 * s), -1, 1)
         delta = (1 - delta ** 2) ** 2
-        
+
     if x0 is None:
         return yest
     else:
         return np.interp(x0, x, yest)
-        

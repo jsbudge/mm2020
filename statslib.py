@@ -241,7 +241,7 @@ Returns:
 '''
 
 
-def getTourneyStats(tdf, df, av_strat='mean'):
+def getTourneyStats(tdf, df, av_strat='mean', round_rank=False):
     wdf = pd.DataFrame(index=tdf.groupby(['Season', 'TID']).mean().index)
     df = df.sort_values('GameID')
     tdf = tdf.sort_values('GameID')
@@ -279,7 +279,8 @@ def getTourneyStats(tdf, df, av_strat='mean'):
         wdf.loc[idx, 'T_Seed'] = sd
         wdf.loc[idx, 'T_FinalElo'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Elo'].values[-1]
         wdf.loc[idx, 'T_FinalRank'] = df.loc(axis=0)[:, idx[0], idx[1], :]['T_Rank'].values[-1]
-        # wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
+        if round_rank:
+            wdf.loc[idx, 'T_RoundRank'] = sum(team['T_Score'] > team['O_Score']) - playin
     wdf = wdf.merge(conf, on=['Season', 'TID']).set_index(['Season', 'TID'])
     return wdf
 
@@ -554,10 +555,8 @@ def calcSystemWeights():
                     # Linear interpolation
                     ranks = np.interp(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'],
                                       team['RankingDayNum'], team['OrdinalRank'], left=team['OrdinalRank'].values[0])
-                    # Cubic spline
-                    # ranks = CubicSpline(team['RankingDayNum'], team['OrdinalRank'])(wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values)
                     ranks[wdf_diffs.loc[wdf_diffs['TID'] == tid, 'DayNum'].values < team['RankingDayNum'].values[0]] = \
-                    team['OrdinalRank'].values[0]
+                        team['OrdinalRank'].values[0]
                 wdf_diffs.loc[wdf_diffs['TID'] == tid, 'T_Rank'] = ranks
                 wdf_diffs.loc[wdf_diffs['OID'] == tid, 'O_Rank'] = ranks
             rdiff = wdf_diffs['T_Rank'] - wdf_diffs['O_Rank']
@@ -851,8 +850,10 @@ def getMatches(gids, team_feats, season=None, diff=False):
     g1 = gsc.merge(team_feats, on=['Season', 'TID']).set_index(ids)
     g2 = gsc.merge(team_feats, left_on=['Season', 'OID'],
                    right_on=['Season', 'TID']).set_index(ids)
-    fdf = g1 - g2 if diff else g1.merge(g2, on=ids)
-    return fdf
+    if diff:
+        return (g1 - g2).sort_index()
+    else:
+        return g1.sort_index(), g2.sort_index()
 
 
 def getAllMatches(team_feats, season, diff=False):

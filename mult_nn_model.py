@@ -9,6 +9,7 @@ that seem to do well on the data
 """
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -33,13 +34,14 @@ def rescale(df, scaler):
                         data=scaler.transform(df))
 
 
+debug = False
 scale = StandardScaler()
 names = st.loadTeamNames()
 k_calls = [tf.keras.callbacks.EarlyStopping(
     monitor="val_loss",
     min_delta=1e-3,
     patience=40,
-    verbose=2,
+    verbose=0,
     mode="auto",
     baseline=None,
     restore_best_weights=True),
@@ -47,7 +49,7 @@ k_calls = [tf.keras.callbacks.EarlyStopping(
         monitor="val_loss",
         factor=0.5,
         patience=15,
-        verbose=2,
+        verbose=0,
         mode="auto",
         min_delta=5e-4,
         cooldown=5,
@@ -60,6 +62,7 @@ tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
 adv_tdf = st.getTourneyStats(tdf, sdf)
 
 # Tourney stats with roundrank so we can do some regression analysis
+# Drop current year from sdf since we don't have tourney results for it yet
 rrank = st.getTourneyStats(tdf, sdf.sort_index().loc(axis=0)[:, :2021, :, :], round_rank=True)
 
 st_df = pd.read_csv('./data/CongStats.csv').set_index(['Season', 'TID'])
@@ -105,7 +108,11 @@ reg_mdl.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4),
                 metrics=['acc'])
 
 print('Fitting model...')
-reg_mdl.fit(Xt, yt, validation_data=(Xs, ys), epochs=5000, verbose=1, callbacks=k_calls,
+# The callbacks given earlier are to adjust the learning rate during training for
+# best results, and to end the training when no real progress is being made.
+# We set the number of training epochs really high as a result - it's never actually
+# going to train for 5000 epochs.
+reg_mdl.fit(Xt, yt, validation_data=(Xs, ys), epochs=5000, verbose=0, callbacks=k_calls,
             class_weight={0: .94, 1: .53, 2: .76, 3: .88, 4: .94, 5: .97, 6: .98, 7: .98})
 
 # We'll want this information for later
@@ -117,38 +124,46 @@ tdf_gamedf = st.getMatches(tdf, st_df, diff=True)
 tdf_gamedf = tdf_gamedf.loc[tdf_gamedf.index.get_level_values(0).duplicated(keep='first')]
 trunc_diff = diff_df.loc[diff_df.index.get_level_values(0).duplicated(keep='first')]
 
-"""
-# This defines the function to grab closest games by L2 norm from all
-# games in the seasons we have data for. Done this way to speed things
-# up with multiprocessing
-def findGameMin(_list, x):
+
+# Note that in order to get parallel speedup, this can't be run in
+# an IPython terminal, you'll get errors. Must be run via
+# terminal, which kills debugging. Hence the flag.
+def rfc_iter(_list, x):
     dist = (trunc_diff - x[1]).apply(np.linalg.norm, axis=1)
-    _list.append(trunc_diff.loc[dist == dist.min()])
+    d_mu = dist[dist != 0.0].mean()
+    d_std = dist[dist != 0.0].std()
+    g_idx = trunc_diff.loc[dist <= dist[dist != 0.0].min() + d_std].index
+    tdf_match.loc[idx, 'MatchIdx'] = g_idx
+    match_games = sdf.loc[g_idx]
+    weights = 1 / (dist.loc[g_idx] + .01)
+    winperc = ((match_games['T_Score'] > match_games['O_Score']) * weights).sum() / weights.sum()
+    _list.append(x[0], (g_idx, dist.min(), d_mu, d_std, winperc))
 
 
-# Multiprocessing to list things out, find closest games
-func_iter = [t for t in tdf_gamedf.iterrows()]
-with mp.Manager() as man:
-    mdl_res = man.list()
-    processes = []
-    for f in func_iter:
-        p = mp.Process(target=findGameMin, args=(mdl_res, f,))
-        processes.append(p)
-        p.start()
-    for proc in processes:
-        proc.join()
-    mdl_res = list(mdl_res)
-"""
-
-pandarallel.initialize(nb_workers=5)
+if not debug:
+    pandarallel.initialize()
 tdf_match = pd.DataFrame(index=tdf_gamedf.index,
-                         columns=['MatchIdx', 'SimScore', 'SimMean', 'SimSigma'])
+                         columns=['MatchIdx', 'SimScore', 'SimMean', 'SimSigma', 'Win%'])
 for idx, row in tqdm(tdf_gamedf.iterrows()):
-    dist = (trunc_diff - row).parallel_apply(np.linalg.norm, axis=1)
-    d_mu = dist.mean()
-    d_std = dist.std()
-    tdf_match.loc[idx, 'MatchIdx'] = trunc_diff.loc[dist <= d_mu - d_std * 2].index
-    tdf_match.loc[idx, ['SimScore', 'SimMean', 'SimSigma']] = [dist.min(), d_mu, d_std]
+    if debug:
+        dist = (trunc_diff - row).apply(np.linalg.norm, axis=1)
+    else:
+        dist = (trunc_diff - row).parallel_apply(np.linalg.norm, axis=1)
+    d_mu = dist[dist != 0.0].mean()
+    d_std = dist[dist != 0.0].std()
+    g_idx = trunc_diff.loc[dist <= dist[dist != 0.0].min() + d_std].index
+    tdf_match.loc[idx, 'MatchIdx'] = g_idx
+    match_games = sdf.loc[g_idx]
+    weights = 1 / (dist.loc[g_idx] + .01)
+    winperc = ((match_games['T_Score'] > match_games['O_Score']) * weights).sum() / weights.sum()
+    tdf_match.loc[idx, ['SimScore', 'SimMean', 'SimSigma', 'Win%']] = [dist.min(), d_mu, d_std, winperc]
+
+if not debug:
+    print(tdf_match.head())
+
+sns.violinplot(tdf_match[['SimScore', 'SimMean', 'SimSigma', 'Win%']])
+
+
 
 
 

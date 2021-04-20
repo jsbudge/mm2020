@@ -16,7 +16,7 @@ import tensorflow as tf
 import time
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.metrics import log_loss
+from sklearn.metrics import accuracy_score
 from sklearn.decomposition import TruncatedSVD
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
@@ -226,14 +226,16 @@ Xs = rescale(Xs, scale)
 cs_list = [AdaBoostClassifier(n_estimators=125, learning_rate=1e-4),
            RandomForestClassifier(n_estimators=100),
            RandomForestClassifier(n_estimators=500)]
+print('Fitting...')
 for cs in cs_list:
-    print('Fitting...')
     cs.fit(Xt, yt)
+    print('Score: {:.2f}%'.format(accuracy_score(ys, cs.predict(Xs)) * 100))
+
 
 # From here, we calculate means and variances for the teams,
 # since we're modeling them as multivariate gaussian
 print('Means and Covariances...')
-svd_mu = st.getSeasonalStats(sdall_df, strat='recent', av_only=True).sort_index()
+svd_mu = st.getSeasonalStats(sdall_df, strat='mest', av_only=True).sort_index()
 svd_cov = pd.DataFrame(index=svd_mu.index, columns=['cov'])
 for idx, row in tqdm(svd_mu.iterrows()):
     svd_cov.loc[idx, 'cov'] = oas(sdall_df.loc(axis=0)[:, idx[0], idx[1], :])[0]
@@ -242,13 +244,26 @@ svd_cov = svd_cov.sort_index()
 print('Running Sims...')
 sim_df = pd.DataFrame(index=tdf.index).sort_index()
 sim_df['TrueWin'] = tdf_t
-n_sims = 500
+n_sims = 100
 for idx, row in tqdm(sim_df.iterrows()):
+    t1_mu = svd_mu.loc[(idx[1], idx[2])].values.reshape((1, -1))
+    t2_mu = svd_mu.loc[(idx[1], idx[3])].values.reshape((1, -1))
     t1 = np.random.multivariate_normal(svd_mu.loc[(idx[1], idx[2])],
                                        svd_cov.loc[(idx[1], idx[2]), 'cov'],
                                        n_sims)
     t2 = np.random.multivariate_normal(svd_mu.loc[(idx[1], idx[3])],
                                        svd_cov.loc[(idx[1], idx[3]), 'cov'],
                                        n_sims)
+    scale_vals = scale.transform(t1 - t2)
+    pt_win = sim_df.loc[idx, 'TrueWin']
     for i, cs in enumerate(cs_list):
-        sim_df.loc[idx, '{}_Win%'.format(i)] = np.mean(cs.predict(scale.transform(t1 - t2)), axis=0)
+        sim_perc = np.mean(cs.predict(scale_vals), axis=0)
+        pred_perc = cs.predict_proba(scale.transform(t1_mu - t2_mu))[0][0]
+        # Make sure we're not absolutely sure, since that creates
+        # infinite log loss
+        sim_perc = min(.99, max(.01, sim_perc))
+        pred_perc = min(.99, max(.01, pred_perc))
+        sim_df.loc[idx, '{}_SimWin%'.format(i)] = sim_perc
+        sim_df.loc[idx, '{}_PredWin%'.format(i)] = pred_perc
+        sim_df.loc[idx, '{}_SimLoss'.format(i)] = -(pt_win * np.log(sim_perc) + (1 - pt_win) * np.log(1 - sim_perc))
+        sim_df.loc[idx, '{}_PredLoss'.format(i)] = -(pt_win * np.log(pred_perc) + (1 - pt_win) * np.log(1 - pred_perc))

@@ -14,15 +14,17 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import time
-from keras.callbacks import TensorBoard
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.ensemble import AdaBoostClassifier
+from sklearn.metrics import log_loss
+from sklearn.decomposition import TruncatedSVD
 from sklearn.gaussian_process import GaussianProcessClassifier
-from tensorboard.plugins.hparams import api as hp
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.covariance import oas
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
 import multiprocessing as mp
+from scipy.stats import multivariate_normal
 from tqdm import tqdm
 from pandarallel import pandarallel
 
@@ -61,6 +63,7 @@ sdf, sdf_t, sdf_d = st.arrangeFrame(scaling=None, noinfluence=True)
 sdf_t.index = sdf.index
 tdf, tdf_t, tdf_d = st.arrangeTourneyGames()
 adv_tdf = st.getTourneyStats(tdf, sdf)
+av_df = st.getSeasonalStats(sdf, strat='relelo')
 
 # Possible games for the year 2021
 subs = pd.read_csv('./data/MSampleSubmissionStage2.csv')
@@ -142,7 +145,7 @@ prob2021 = pd.DataFrame(index=pred_tdf.index, columns=['1st4', 'R1', 'R64', 'R32
 # Similar game score - given the differences, find close matches
 # and select winner based on that
 tdf_gamedf = st.getMatches(tdf, st_df, diff=True)
-tdf_gamedf = tdf_gamedf.loc[tdf_gamedf.index.get_level_values(0).duplicated(keep='first')]
+trunc_gamedf = tdf_gamedf.loc[tdf_gamedf.index.get_level_values(0).duplicated(keep='first')]
 trunc_diff = diff_df.loc[diff_df.index.get_level_values(0).duplicated(keep='first')]
 
 
@@ -160,11 +163,11 @@ def getSimilarGames(_list, x):
     _list.append((x[0], (sg_idx, sm_dist.min(), sd_mu, sd_std, swinperc)))
 
 
-tdf_match = pd.DataFrame(index=tdf_gamedf.index,
+tdf_match = pd.DataFrame(index=trunc_gamedf.index,
                          columns=['MatchIdx', 'SimScore', 'SimMean', 'SimSigma', 'Win%'])
 print('Running similar matches...')
 if debug:
-    for idx, row in tqdm(tdf_gamedf.iterrows()):
+    for idx, row in tqdm(trunc_gamedf.iterrows()):
         dist = (trunc_diff - row).apply(np.linalg.norm, axis=1)
         d_mu = dist[dist != 0.0].mean()
         d_std = dist[dist != 0.0].std()
@@ -176,7 +179,7 @@ if debug:
         tdf_match.loc[idx, ['SimScore', 'SimMean', 'SimSigma', 'Win%']] = [dist.min(), d_mu, d_std, winperc]
 else:
     match_res = []
-    func_iter = [t for t in tdf_gamedf.iterrows()]
+    func_iter = [t for t in trunc_gamedf.iterrows()]
     with mp.Manager() as man:
         match_res = man.list()
         processes = []
@@ -190,10 +193,62 @@ else:
     for m in match_res:
         tdf_match.loc[m[0]] = m[1]
 
-print('Running Gaussian Process Classification/Probability...')
-# Check out various kernels
-kernels = ['']
-gpc = GaussianProcessClassifier(kernel='')
+print('Running simulation probabilities...')
+# First, let's generate our training data.
+# We want a smaller set of features, so we use
+# an SVD to get only a few features.
 
+print('SVD...')
+tvsd = TruncatedSVD(n_components=10)
+svds, _, _ = st.arrangeFrame(scaling=None, noinfluence=True, split=True)
 
+# Remove all the opponent stuff - we want only team stats
+svds = [s.drop(columns=[c for c in s.columns if c[:2] == 'O_'] + ['DayNum']) for s in svds]
 
+# Append and transform so we have our reduced dimension data
+sdall_df = svds[0].append(svds[1]).sort_index()
+sdall_df = pd.DataFrame(index=sdall_df.index, data=tvsd.fit_transform(scale.fit_transform(sdall_df)))
+svds = [pd.DataFrame(index=s.index, data=tvsd.transform(scale.transform(s))) for s in svds]
+
+# Get differences for game evaluation
+svd_df = pd.DataFrame(index=svds[0].index,
+                      data=svds[0].values - svds[1].values)
+svd_df = svd_df.append(pd.DataFrame(index=svds[1].index,
+                                    data=svds[1].values - svds[0].values))
+
+Xt, Xs, yt, ys = train_test_split(svd_df, sdf_t.loc[svd_df.index])
+scale.fit(Xt)
+Xt = rescale(Xt, scale)
+Xs = rescale(Xs, scale)
+
+# Train several algorithms on the SVD data, so it knows what
+# a winning team does
+cs_list = [AdaBoostClassifier(n_estimators=125, learning_rate=1e-4),
+           RandomForestClassifier(n_estimators=100),
+           RandomForestClassifier(n_estimators=500)]
+for cs in cs_list:
+    print('Fitting...')
+    cs.fit(Xt, yt)
+
+# From here, we calculate means and variances for the teams,
+# since we're modeling them as multivariate gaussian
+print('Means and Covariances...')
+svd_mu = st.getSeasonalStats(sdall_df, strat='recent', av_only=True).sort_index()
+svd_cov = pd.DataFrame(index=svd_mu.index, columns=['cov'])
+for idx, row in tqdm(svd_mu.iterrows()):
+    svd_cov.loc[idx, 'cov'] = oas(sdall_df.loc(axis=0)[:, idx[0], idx[1], :])[0]
+svd_cov = svd_cov.sort_index()
+
+print('Running Sims...')
+sim_df = pd.DataFrame(index=tdf.index).sort_index()
+sim_df['TrueWin'] = tdf_t
+n_sims = 500
+for idx, row in tqdm(sim_df.iterrows()):
+    t1 = np.random.multivariate_normal(svd_mu.loc[(idx[1], idx[2])],
+                                       svd_cov.loc[(idx[1], idx[2]), 'cov'],
+                                       n_sims)
+    t2 = np.random.multivariate_normal(svd_mu.loc[(idx[1], idx[3])],
+                                       svd_cov.loc[(idx[1], idx[3]), 'cov'],
+                                       n_sims)
+    for i, cs in enumerate(cs_list):
+        sim_df.loc[idx, '{}_Win%'.format(i)] = np.mean(cs.predict(scale.transform(t1 - t2)), axis=0)

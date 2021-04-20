@@ -7,6 +7,8 @@ This is the statistics library that we'll be using.
 import numpy as np
 import pandas as pd
 import os
+
+from sklearn.metrics import mutual_info_score
 from tqdm import tqdm
 from scipy.linalg import solve
 from scipy.interpolate import CubicSpline
@@ -452,8 +454,8 @@ def getSeasonalStats(df, strat='rank', av_only=False, seasonal_only=False):
                                                                                          'TID_x']).mean()[
             'T_PythWin%'].values
         oo_win = \
-        df.reset_index().merge(wdf['T_OPythWin%'], left_on=['Season', 'OID'], right_on=['Season', 'TID']).groupby(
-            ['Season', 'TID']).mean()['T_OPythWin%']
+            df.reset_index().merge(wdf['T_OPythWin%'], left_on=['Season', 'OID'], right_on=['Season', 'TID']).groupby(
+                ['Season', 'TID']).mean()['T_OPythWin%']
         wdf['T_PythRPI'] = .25 * wdf['T_PythWin%'] + .5 * wdf['T_OPythWin%'] + .25 * oo_win
         wdf['T_SoS'] = dfapp.apply(lambda grp: np.average(400 - grp['O_Rank'], weights=grp['O_Elo']) / 4)
         wdf['T_ExpWin%'] = dfapp.apply(lambda x: sum(x['T_Elo'] > x['O_Elo']) / x.shape[0])
@@ -760,24 +762,42 @@ Returns:
 def arrangeFrame(season=None, scaling=None, noraw=False, noinfluence=False,
                  split=False):
     if split:
-        ts = getGames(season=season, split=True)[0].drop(columns=['NumOT', 'GLoc'])
+        ts = list(getGames(season=season, split=True))
+        for n in range(2):
+            ts[n] = ts[n].drop(columns=['NumOT', 'GLoc'])
+            if noraw:
+                ts[n] = joinFrame(ts[n][['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
+                                  getStats(ts[n]))
+            else:
+                ts[n] = joinFrame(ts[n], getStats(ts[n]))
+            ts[n] = addRanks(ts[n])
+            ts[n] = addElos(ts[n])
+            ts[n] = ts[n].set_index(['GameID', 'Season', 'TID', 'OID'])
+
+            if not noinfluence:
+                ts[n] = joinFrame(ts[n], getInfluenceStats(ts[n])).set_index(['GameID', 'Season', 'TID', 'OID'])
+                ts[n] = ts[n].drop(columns=['DayNum', 'Unnamed: 0'])
+            if scaling is not None:
+                ts[n] = normalizeToSeason(ts, scaler=scaling)
+        tsdays = ts[0]['DayNum']
+        ty = ts[0]['T_Score'] < ts[0]['O_Score'] - 0
     else:
         ts = getGames(season=season).drop(columns=['NumOT', 'GLoc'])
-    if noraw:
-        ts = joinFrame(ts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
-                       getStats(ts))
-    else:
-        ts = joinFrame(ts, getStats(ts))
-    ts = addRanks(ts)
-    ts = addElos(ts)
-    ts = ts.set_index(['GameID', 'Season', 'TID', 'OID'])
-    tsdays = ts['DayNum']
-    ty = ts['T_Score'] < ts['O_Score'] - 0
-    if not noinfluence:
-        ts = joinFrame(ts, getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
-        ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])
-    if scaling is not None:
-        ts = normalizeToSeason(ts, scaler=scaling)
+        if noraw:
+            ts = joinFrame(ts[['GameID', 'Season', 'DayNum', 'TID', 'OID', 'T_Score', 'O_Score']],
+                           getStats(ts))
+        else:
+            ts = joinFrame(ts, getStats(ts))
+        ts = addRanks(ts)
+        ts = addElos(ts)
+        ts = ts.set_index(['GameID', 'Season', 'TID', 'OID'])
+        tsdays = ts['DayNum']
+        ty = ts['T_Score'] < ts['O_Score'] - 0
+        if not noinfluence:
+            ts = joinFrame(ts, getInfluenceStats(ts)).set_index(['GameID', 'Season', 'TID', 'OID'])
+            ts = ts.drop(columns=['DayNum', 'Unnamed: 0'])
+        if scaling is not None:
+            ts = normalizeToSeason(ts, scaler=scaling)
     return ts, ty, tsdays
 
 
@@ -940,3 +960,26 @@ def lowess(x, y, w, x0=None, f=.1, n_iter=3):
         return yest
     else:
         return np.interp(x0, x, yest)
+
+
+def getPairwiseMI(A, adj=False):
+    calc_MI = lambda x, y, bins: \
+        mutual_info_score(None, None,
+                          contingency=np.histogram2d(x, y, bins)[0])
+    be = {}
+    for col in A.columns:
+        be[col] = np.histogram_bin_edges(A[col], 'fd')
+    matMI = pd.DataFrame(index=A.columns, columns=A.columns)
+    for ix in A.columns:
+        for jx in A.columns:
+            if np.isnan(matMI.loc[ix, jx]):
+                val = calc_MI(A[ix].values,
+                              A[jx].values, [be[ix], be[jx]])
+                matMI.loc[ix, jx] = val
+                matMI.loc[jx, ix] = val
+    if adj:
+        kx = np.linalg.pinv(np.sqrt(np.diag(np.diag(matMI.astype(float)))))
+        return pd.DataFrame(index=A.columns,
+                            columns=A.columns,
+                            data=kx.dot(matMI).dot(kx)).astype(float)
+    return matMI.astype(float)

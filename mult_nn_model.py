@@ -26,6 +26,8 @@ from tensorflow.keras import layers, regularizers
 import multiprocessing as mp
 from scipy.stats import multivariate_normal
 from tqdm import tqdm
+from tourney import Bracket
+from itertools import permutations
 from pandarallel import pandarallel
 
 import statslib as st
@@ -79,7 +81,8 @@ sub_df = sub_df.set_index(['GameID', 'Season', 'TID', 'OID'])
 s2_df = s2_df.set_index(['GameID', 'Season', 'TID', 'OID'])
 sub_df['Pivot'] = 1;
 s2_df['Pivot'] = 1
-pred_tdf = st.getTourneyStats(sub_df.append(s2_df), sdf)
+matches_2021 = sub_df.append(s2_df)
+pred_tdf = st.getTourneyStats(matches_2021, sdf)
 
 # Tourney stats with roundrank so we can do some regression analysis
 # Drop current year from sdf since we don't have tourney results for it yet
@@ -231,7 +234,6 @@ for cs in cs_list:
     cs.fit(Xt, yt)
     print('Score: {:.2f}%'.format(accuracy_score(ys, cs.predict(Xs)) * 100))
 
-
 # From here, we calculate means and variances for the teams,
 # since we're modeling them as multivariate gaussian
 print('Means and Covariances...')
@@ -241,21 +243,18 @@ for idx, row in tqdm(svd_mu.iterrows()):
     svd_cov.loc[idx, 'cov'] = oas(sdall_df.loc(axis=0)[:, idx[0], idx[1], :])[0]
 svd_cov = svd_cov.sort_index()
 
-print('Running Sims...')
-sim_df = pd.DataFrame(index=tdf.index).sort_index()
-sim_df['TrueWin'] = tdf_t
-n_sims = 100
-for idx, row in tqdm(sim_df.iterrows()):
-    t1_mu = svd_mu.loc[(idx[1], idx[2])].values.reshape((1, -1))
-    t2_mu = svd_mu.loc[(idx[1], idx[3])].values.reshape((1, -1))
-    t1 = np.random.multivariate_normal(svd_mu.loc[(idx[1], idx[2])],
-                                       svd_cov.loc[(idx[1], idx[2]), 'cov'],
+
+def runSimulation(_list, x):
+    t1_mu = svd_mu.loc[(x[0][1], x[0][2])].values.reshape((1, -1))
+    t2_mu = svd_mu.loc[(x[0][1], x[0][3])].values.reshape((1, -1))
+    t1 = np.random.multivariate_normal(svd_mu.loc[(x[0][1], x[0][2])],
+                                       svd_cov.loc[(x[0][1], x[0][2]), 'cov'],
                                        n_sims)
-    t2 = np.random.multivariate_normal(svd_mu.loc[(idx[1], idx[3])],
-                                       svd_cov.loc[(idx[1], idx[3]), 'cov'],
+    t2 = np.random.multivariate_normal(svd_mu.loc[(x[0][1], x[0][3])],
+                                       svd_cov.loc[(x[0][1], x[0][3]), 'cov'],
                                        n_sims)
     scale_vals = scale.transform(t1 - t2)
-    pt_win = sim_df.loc[idx, 'TrueWin']
+    pt_win = x[1][0]
     for i, cs in enumerate(cs_list):
         sim_perc = np.mean(cs.predict(scale_vals), axis=0)
         pred_perc = cs.predict_proba(scale.transform(t1_mu - t2_mu))[0][0]
@@ -263,7 +262,88 @@ for idx, row in tqdm(sim_df.iterrows()):
         # infinite log loss
         sim_perc = min(.99, max(.01, sim_perc))
         pred_perc = min(.99, max(.01, pred_perc))
-        sim_df.loc[idx, '{}_SimWin%'.format(i)] = sim_perc
-        sim_df.loc[idx, '{}_PredWin%'.format(i)] = pred_perc
-        sim_df.loc[idx, '{}_SimLoss'.format(i)] = -(pt_win * np.log(sim_perc) + (1 - pt_win) * np.log(1 - sim_perc))
-        sim_df.loc[idx, '{}_PredLoss'.format(i)] = -(pt_win * np.log(pred_perc) + (1 - pt_win) * np.log(1 - pred_perc))
+        _list.append((x[0], (pt_win, sim_perc, pred_perc,
+                             -(pt_win * np.log(sim_perc) + (1 - pt_win) * np.log(1 - sim_perc)),
+                             -(pt_win * np.log(pred_perc) + (1 - pt_win) * np.log(1 - pred_perc)))))
+
+
+print('Running Sims...')
+sim_cols = ['TrueWin']
+for i in range(len(cs_list)):
+    sim_cols = sim_cols + ['{}_SimWin%'.format(i)] + ['{}_PredWin%'.format(i)] \
+               + ['{}_SimLoss'.format(i)] + ['{}_PredLoss'.format(i)]
+sim_df = pd.DataFrame(index=tdf.index, columns=sim_cols).sort_index()
+n_sims = 100
+if debug:
+    sim_df['TrueWin'] = tdf_t
+    for idx, row in tqdm(sim_df.iterrows()):
+        t1_mu = svd_mu.loc[(idx[1], idx[2])].values.reshape((1, -1))
+        t2_mu = svd_mu.loc[(idx[1], idx[3])].values.reshape((1, -1))
+        t1 = np.random.multivariate_normal(svd_mu.loc[(idx[1], idx[2])],
+                                           svd_cov.loc[(idx[1], idx[2]), 'cov'],
+                                           n_sims)
+        t2 = np.random.multivariate_normal(svd_mu.loc[(idx[1], idx[3])],
+                                           svd_cov.loc[(idx[1], idx[3]), 'cov'],
+                                           n_sims)
+        scale_vals = scale.transform(t1 - t2)
+        pt_win = sim_df.loc[idx, 'TrueWin']
+        for i, cs in enumerate(cs_list):
+            sim_perc = np.mean(cs.predict(scale_vals), axis=0)
+            pred_perc = cs.predict_proba(scale.transform(t1_mu - t2_mu))[0][0]
+            # Make sure we're not absolutely sure, since that creates
+            # infinite log loss
+            sim_perc = min(.99, max(.01, sim_perc))
+            pred_perc = min(.99, max(.01, pred_perc))
+            sim_df.loc[idx, '{}_SimWin%'.format(i)] = sim_perc
+            sim_df.loc[idx, '{}_PredWin%'.format(i)] = pred_perc
+            sim_df.loc[idx, '{}_SimLoss'.format(i)] = -(pt_win * np.log(sim_perc) + (1 - pt_win) * np.log(1 - sim_perc))
+            sim_df.loc[idx, '{}_PredLoss'.format(i)] = -(
+                        pt_win * np.log(pred_perc) + (1 - pt_win) * np.log(1 - pred_perc))
+else:
+    sim_res = []
+    func_iter = [t for t in pd.DataFrame(tdf_t).iterrows()]
+    with mp.Manager() as man:
+        match_res = man.list()
+        processes = []
+        for f in func_iter:
+            p = mp.Process(target=runSimulation, args=(match_res, f,))
+            processes.append(p)
+            p.start()
+        for proc in processes:
+            proc.join()
+        match_res = list(match_res)
+    for m in match_res:
+        sim_df.loc[m[0]] = m[1]
+
+print('Running tournament...')
+br2021 = Bracket(2021)
+
+# Let's check out our results with the simulation.
+poss_games = [c for c in permutations(br2021.seeds['TeamID'].values, 2)]
+pg = {}
+for game in tqdm(poss_games):
+    t1 = np.random.multivariate_normal(svd_mu.loc[(2021, game[0])],
+                                       svd_cov.loc[(2021, game[0]), 'cov'],
+                                       n_sims)
+    t2 = np.random.multivariate_normal(svd_mu.loc[(2021, game[1])],
+                                       svd_cov.loc[(2021, game[1]), 'cov'],
+                                       n_sims)
+    scale_vals = scale.transform(t2 - t1)
+    pg[game] = np.mean(cs_list[0].predict(scale_vals), axis=0)
+
+br2021.runWithDict(pg)
+print(br2021)
+
+similar_games_df = st.getMatches(matches_2021, st_df, diff=True)
+for idx, row in tqdm(similar_games_df.iterrows()):
+    dist = (trunc_diff - row).apply(np.linalg.norm, axis=1)
+    d_mu = dist[dist != 0.0].mean()
+    d_std = dist[dist != 0.0].std()
+    g_idx = trunc_diff.loc[dist <= dist[dist != 0.0].min() + d_std].index
+    match_games = sdf.loc[g_idx]
+    weights = 1 / (dist.loc[g_idx] + .01)
+    winperc = ((match_games['T_Score'] > match_games['O_Score']) * weights).sum() / weights.sum()
+    pg[(int(idx[2]), int(idx[3]))] = winperc
+
+br2021.runWithDict(pg)
+print(br2021)

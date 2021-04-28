@@ -8,27 +8,21 @@ several different models into one:
 that seem to do well on the data
 """
 
-import matplotlib.pyplot as plt
-import seaborn as sns
+import multiprocessing as mp
+from itertools import permutations
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import time
+from sklearn.covariance import oas
+from sklearn.decomposition import TruncatedSVD
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.metrics import accuracy_score
-from sklearn.decomposition import TruncatedSVD
-from sklearn.gaussian_process import GaussianProcessClassifier
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
-from sklearn.covariance import oas
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
-import multiprocessing as mp
-from scipy.stats import multivariate_normal
 from tqdm import tqdm
-from tourney import Bracket
-from itertools import permutations
-from pandarallel import pandarallel
 
 import statslib as st
 from tourney import Bracket
@@ -79,7 +73,7 @@ s2_df['TID'] = sub_df['OID']
 s2_df['OID'] = sub_df['TID']
 sub_df = sub_df.set_index(['GameID', 'Season', 'TID', 'OID'])
 s2_df = s2_df.set_index(['GameID', 'Season', 'TID', 'OID'])
-sub_df['Pivot'] = 1;
+sub_df['Pivot'] = 1
 s2_df['Pivot'] = 1
 matches_2021 = sub_df.append(s2_df)
 pred_tdf = st.getTourneyStats(matches_2021, sdf)
@@ -181,7 +175,6 @@ if debug:
         winperc = ((match_games['T_Score'] > match_games['O_Score']) * weights).sum() / weights.sum()
         tdf_match.loc[idx, ['SimScore', 'SimMean', 'SimSigma', 'Win%']] = [dist.min(), d_mu, d_std, winperc]
 else:
-    match_res = []
     func_iter = [t for t in trunc_gamedf.iterrows()]
     with mp.Manager() as man:
         match_res = man.list()
@@ -202,7 +195,7 @@ print('Running simulation probabilities...')
 # an SVD to get only a few features.
 
 print('SVD...')
-tvsd = TruncatedSVD(n_components=10)
+tvsd = TruncatedSVD(n_components=30)
 svds, _, _ = st.arrangeFrame(scaling=None, noinfluence=True, split=True)
 
 # Remove all the opponent stuff - we want only team stats
@@ -226,7 +219,7 @@ Xs = rescale(Xs, scale)
 
 # Train several algorithms on the SVD data, so it knows what
 # a winning team does
-cs_list = [AdaBoostClassifier(n_estimators=125, learning_rate=1e-4),
+cs_list = [AdaBoostClassifier(n_estimators=525, learning_rate=1e-4),
            RandomForestClassifier(n_estimators=100),
            RandomForestClassifier(n_estimators=500)]
 print('Fitting...')
@@ -237,7 +230,7 @@ for cs in cs_list:
 # From here, we calculate means and variances for the teams,
 # since we're modeling them as multivariate gaussian
 print('Means and Covariances...')
-svd_mu = st.getSeasonalStats(sdall_df, strat='mest', av_only=True).sort_index()
+svd_mu = st.getSeasonalStats(sdall_df, strat='recent', av_only=True).sort_index()
 svd_cov = pd.DataFrame(index=svd_mu.index, columns=['cov'])
 for idx, row in tqdm(svd_mu.iterrows()):
     svd_cov.loc[idx, 'cov'] = oas(sdall_df.loc(axis=0)[:, idx[0], idx[1], :])[0]
@@ -245,26 +238,26 @@ svd_cov = svd_cov.sort_index()
 
 
 def runSimulation(_list, x):
-    t1_mu = svd_mu.loc[(x[0][1], x[0][2])].values.reshape((1, -1))
-    t2_mu = svd_mu.loc[(x[0][1], x[0][3])].values.reshape((1, -1))
-    t1 = np.random.multivariate_normal(svd_mu.loc[(x[0][1], x[0][2])],
-                                       svd_cov.loc[(x[0][1], x[0][2]), 'cov'],
-                                       n_sims)
-    t2 = np.random.multivariate_normal(svd_mu.loc[(x[0][1], x[0][3])],
-                                       svd_cov.loc[(x[0][1], x[0][3]), 'cov'],
-                                       n_sims)
-    scale_vals = scale.transform(t1 - t2)
-    pt_win = x[1][0]
-    for i, cs in enumerate(cs_list):
-        sim_perc = np.mean(cs.predict(scale_vals), axis=0)
-        pred_perc = cs.predict_proba(scale.transform(t1_mu - t2_mu))[0][0]
+    par_t1_mu = svd_mu.loc[(x[0][1], x[0][2])].values.reshape((1, -1))
+    par_t2_mu = svd_mu.loc[(x[0][1], x[0][3])].values.reshape((1, -1))
+    par_t1 = np.random.multivariate_normal(svd_mu.loc[(x[0][1], x[0][2])],
+                                           svd_cov.loc[(x[0][1], x[0][2]), 'cov'],
+                                           n_sims)
+    par_t2 = np.random.multivariate_normal(svd_mu.loc[(x[0][1], x[0][3])],
+                                           svd_cov.loc[(x[0][1], x[0][3]), 'cov'],
+                                           n_sims)
+    par_scale_vals = scale.transform(par_t1 - par_t2)
+    par_pt_win = x[1][0]
+    for par_i, par_cs in enumerate(cs_list):
+        par_sim_perc: float = np.mean(par_cs.predict(par_scale_vals), axis=0)
+        par_pred_perc = par_cs.predict_proba(scale.transform(par_t1_mu - par_t2_mu))[0][0]
         # Make sure we're not absolutely sure, since that creates
         # infinite log loss
-        sim_perc = min(.99, max(.01, sim_perc))
-        pred_perc = min(.99, max(.01, pred_perc))
-        _list.append((x[0], (pt_win, sim_perc, pred_perc,
-                             -(pt_win * np.log(sim_perc) + (1 - pt_win) * np.log(1 - sim_perc)),
-                             -(pt_win * np.log(pred_perc) + (1 - pt_win) * np.log(1 - pred_perc)))))
+        par_sim_perc = min(.99, max(.01, par_sim_perc))
+        par_pred_perc = min(.99, max(.01, par_pred_perc))
+        _list.append((x[0], (par_pt_win, par_sim_perc, par_pred_perc,
+                             -(par_pt_win * np.log(par_sim_perc) + (1 - par_pt_win) * np.log(1 - par_sim_perc)),
+                             -(par_pt_win * np.log(par_pred_perc) + (1 - par_pt_win) * np.log(1 - par_pred_perc)))))
 
 
 print('Running Sims...')
@@ -288,7 +281,7 @@ if debug:
         scale_vals = scale.transform(t1 - t2)
         pt_win = sim_df.loc[idx, 'TrueWin']
         for i, cs in enumerate(cs_list):
-            sim_perc = np.mean(cs.predict(scale_vals), axis=0)
+            sim_perc: float = np.mean(cs.predict(scale_vals), axis=0)
             pred_perc = cs.predict_proba(scale.transform(t1_mu - t2_mu))[0][0]
             # Make sure we're not absolutely sure, since that creates
             # infinite log loss
@@ -300,7 +293,6 @@ if debug:
             sim_df.loc[idx, '{}_PredLoss'.format(i)] = -(
                         pt_win * np.log(pred_perc) + (1 - pt_win) * np.log(1 - pred_perc))
 else:
-    sim_res = []
     func_iter = [t for t in pd.DataFrame(tdf_t).iterrows()]
     with mp.Manager() as man:
         match_res = man.list()
